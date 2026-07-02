@@ -1,6 +1,6 @@
 import React, { useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { AppData } from '../data/mockData';
+import { AppData } from '../lib/apps';
 import { Terminal, Shield, Code, Zap, Cpu, Star, Download } from 'lucide-react';
 
 interface AppCardProps {

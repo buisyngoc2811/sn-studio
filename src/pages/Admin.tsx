@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { appsData, articlesData, marketplaceData } from '../data/mockData';
+import { articlesData, marketplaceData } from '../data/mockData';
 import { 
   LayoutDashboard, 
   Settings, 
@@ -14,11 +14,12 @@ import {
   Database,
   Globe
 } from 'lucide-react';
-import { AppData, ArticleData, MarketplaceItem, MemberData, membersData } from '../data/mockData';
+import { ArticleData, MarketplaceItem, MemberData, membersData } from '../data/mockData';
 import { AdminAppModal } from '../components/AdminAppModal';
 import { AdminArticleModal } from '../components/AdminArticleModal';
 import { AdminMarketModal } from '../components/AdminMarketModal';
 import { AdminUserModal } from '../components/AdminUserModal';
+import { fetchApps, saveApp as saveSupabaseApp, deleteApp as deleteSupabaseApp, AppData } from '../lib/apps';
 
 interface AdminProps {
   username: string;
@@ -50,7 +51,7 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
   // Local Storage Data States
   const [users, setUsers] = useState<Record<string, string>>({});
   const [members, setMembers] = useState(membersData);
-  const [apps, setApps] = useState(appsData);
+  const [apps, setApps] = useState<AppData[]>([]);
   const [articles, setArticles] = useState(articlesData);
   const [marketItems, setMarketItems] = useState(marketplaceData);
   const [purchases, setPurchases] = useState<any[]>([]);
@@ -66,6 +67,17 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
   });
 
   useEffect(() => {
+    const loadApps = async () => {
+      try {
+        setApps(await fetchApps());
+      } catch (error) {
+        console.error('Error loading admin apps:', error);
+        setApps([]);
+      }
+    };
+
+    loadApps();
+
     // Load Settings
     const settingsStr = localStorage.getItem('sn_settings');
     if (settingsStr) setSysSettings(JSON.parse(settingsStr));
@@ -83,6 +95,9 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
     // Load Purchases
     const purchasesStr = localStorage.getItem('sn_purchases');
     if (purchasesStr) setPurchases(JSON.parse(purchasesStr));
+
+    window.addEventListener('apps-db-updated', loadApps);
+    return () => window.removeEventListener('apps-db-updated', loadApps);
   }, []);
 
   const handleDeleteUser = (userKey: string) => {
@@ -99,30 +114,26 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
     }
   };
 
-  const handleDeleteApp = (id: string) => {
+  const handleDeleteApp = async (id: string) => {
     if (window.confirm('Xóa ứng dụng này?')) {
-      const newApps = apps.filter(a => a.id !== id);
-      setApps(newApps);
-      localStorage.setItem('sn_apps_db', JSON.stringify(newApps));
-      // Dispatch event for apps update
-      window.dispatchEvent(new Event('apps-db-updated'));
+      try {
+        await deleteSupabaseApp(id);
+        setApps(await fetchApps());
+        window.dispatchEvent(new Event('apps-db-updated'));
+      } catch (error: any) {
+        alert(`Không thể xóa ứng dụng: ${error.message}`);
+      }
     }
   };
 
-  const handleSaveApp = (app: AppData) => {
-    let newApps = [...apps];
-    const existingIndex = newApps.findIndex(a => a.id === app.id);
-    
-    if (existingIndex >= 0) {
-      newApps[existingIndex] = app;
-    } else {
-      newApps = [app, ...newApps];
+  const handleSaveApp = async (app: AppData) => {
+    try {
+      await saveSupabaseApp(app);
+      setApps(await fetchApps());
+      window.dispatchEvent(new Event('apps-db-updated'));
+    } catch (error: any) {
+      alert(`Không thể lưu ứng dụng: ${error.message}`);
     }
-    
-    setApps(newApps);
-    localStorage.setItem('sn_apps_db', JSON.stringify(newApps));
-    // Dispatch event to sync with Apps page if it was open
-    window.dispatchEvent(new Event('apps-db-updated'));
   };
 
   const handleDeleteArticle = (id: string) => {
@@ -247,7 +258,6 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
             const data = JSON.parse(event.target?.result as string);
             if (data.settings) setSysSettings(data.settings);
             if (data.members) setMembers(data.members);
-            if (data.apps) setApps(data.apps);
             if (data.articles) setArticles(data.articles);
             if (data.marketItems) setMarketItems(data.marketItems);
             alert('Khôi phục dữ liệu thành công! Vui lòng tải lại trang.');

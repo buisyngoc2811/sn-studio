@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
+import {
   Cpu, 
   Shield, 
   Terminal, 
@@ -15,7 +15,9 @@ import {
   ShoppingCart,
   Key
 } from 'lucide-react';
-import { appsData, articlesData, recentNotifications } from '../data/mockData';
+import { articlesData, recentNotifications } from '../data/mockData';
+import { supabase } from '../lib/supabase';
+import { fetchApps, AppData } from '../lib/apps';
 
 interface DashboardProps {
   username: string;
@@ -30,25 +32,56 @@ export const Dashboard: React.FC<DashboardProps> = ({ username, setRoute }) => {
   // Settings Form states
   const [profileName, setProfileName] = useState(username);
   const [profileEmail, setProfileEmail] = useState(`${username.toLowerCase().replace(/\s+/g, '')}@snstudio.vn`);
+  const [avatarUrl, setAvatarUrl] = useState('');
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [apps, setApps] = useState<any[]>(appsData);
+  const [apps, setApps] = useState<AppData[]>([]);
   const [articles, setArticles] = useState<any[]>(articlesData);
+  const [profile, setProfile] = useState<any>(null);
 
   useEffect(() => {
-    const loadData = () => {
-      const storedApps = localStorage.getItem('sn_apps_db');
-      if (storedApps) setApps(JSON.parse(storedApps));
+    const fetchProfile = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setRoute('login');
+        return;
+      }
       
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+        
+        if (data) {
+          setProfile(data);
+          setProfileName(data.display_name || data.username);
+          setProfileEmail(data.email);
+          setAvatarUrl(data.avatar_url || '');
+        }
+    };
+    
+    fetchProfile();
+    const loadArticles = () => {
       const storedArticles = localStorage.getItem('sn_articles_db');
       if (storedArticles) setArticles(JSON.parse(storedArticles));
     };
-    loadData();
-    window.addEventListener('apps-db-updated', loadData);
-    window.addEventListener('articles-db-updated', loadData);
+    const loadApps = async () => {
+      try {
+        setApps(await fetchApps());
+      } catch (error) {
+        console.error('Error loading dashboard apps:', error);
+        setApps([]);
+      }
+    };
+
+    loadArticles();
+    loadApps();
+    window.addEventListener('apps-db-updated', loadApps);
+    window.addEventListener('articles-db-updated', loadArticles);
     return () => {
-      window.removeEventListener('apps-db-updated', loadData);
-      window.removeEventListener('articles-db-updated', loadData);
+      window.removeEventListener('apps-db-updated', loadApps);
+      window.removeEventListener('articles-db-updated', loadArticles);
     };
   }, []);
 
@@ -59,7 +92,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ username, setRoute }) => {
   
   const downloadedApps = downloadedIds.length > 0 
     ? apps.filter(app => downloadedIds.includes(app.id)) 
-    : apps.slice(0, 2); // fallback mock
+    : [];
 
   const savedArticles = savedArtIds.length > 0
     ? articles.filter(art => savedArtIds.includes(art.id))
@@ -67,9 +100,38 @@ export const Dashboard: React.FC<DashboardProps> = ({ username, setRoute }) => {
 
   const joinDate = new Date().toLocaleDateString('vi-VN');
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    alert('Cập nhật thông tin cấu hình tài khoản cá nhân thành công!');
+    
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      alert('Không tìm thấy phiên đăng nhập!');
+      return;
+    }
+    
+    const { error } = await supabase
+      .from('profiles')
+      .upsert({
+        id: session.user.id,
+        username: profile?.username || username.split('@')[0],
+        display_name: profileName,
+        email: profileEmail,
+        avatar_url: avatarUrl,
+        role: profile?.role || 'user'
+      });
+
+    if (error) {
+      alert(`Lỗi cập nhật: ${error.message}`);
+    } else {
+      alert('Cập nhật hồ sơ cá nhân thành công!');
+      const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+      if (data) {
+        setProfile(data);
+        setProfileName(data.display_name || data.username);
+        setProfileEmail(data.email);
+        setAvatarUrl(data.avatar_url || '');
+      }
+    }
   };
 
   const handleAppAction = (appName: string, action: string) => {
@@ -87,15 +149,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ username, setRoute }) => {
           <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-5 text-center relative overflow-hidden transition-all hover:border-brand-500/25">
             <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-brand-accent via-red-500 to-transparent" />
             
-            <div className="mx-auto w-16 h-16 rounded-full bg-brand-600/20 border border-brand-500/30 flex items-center justify-center font-bold text-brand-400 text-2xl uppercase mb-3.5 shadow-glow-red">
-              {username.substring(0, 2)}
+            <div className="mx-auto w-16 h-16 rounded-full bg-brand-600/20 border border-brand-500/30 flex items-center justify-center font-bold text-brand-400 text-2xl uppercase mb-3.5 shadow-glow-red overflow-hidden">
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                profile?.display_name?.substring(0, 2) || username.substring(0, 2)
+              )}
             </div>
             
-            <h2 className="text-base font-bold text-white">{username}</h2>
-            <p className="text-[10px] text-zinc-400 mt-0.5">{profileEmail}</p>
+            <h2 className="text-base font-bold text-white">{profile?.display_name || username}</h2>
+            <p className="text-[10px] text-zinc-400 mt-0.5">@{profile?.username || username.split('@')[0]}</p>
+            <p className="text-[10px] text-zinc-400 mt-0.5">{profile?.email || profileEmail}</p>
             <p className="text-[10px] text-zinc-500 mt-0.5">Tham gia: {joinDate}</p>
             <span className="inline-block mt-2 rounded-full bg-brand-500/10 border border-brand-500/20 px-2.5 py-0.5 text-[9px] font-bold text-brand-400 uppercase tracking-wider animate-pulse">
-              Hội viên Kim Cương
+              {profile?.role === 'admin' ? 'Quản trị viên' : profile?.role === 'developer' ? 'Nhà phát triển' : 'Hội viên Kim Cương'}
             </span>
 
             {/* Minor info stats */}
@@ -481,15 +548,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ username, setRoute }) => {
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-zinc-450 uppercase tracking-wider mb-1.5">Địa chỉ Email</label>
+                      <label className="block text-[10px] font-bold text-zinc-450 uppercase tracking-wider mb-1.5">Địa chỉ Email (Không đổi)</label>
                       <input
                         type="email"
-                        required
+                        disabled
                         value={profileEmail}
-                        onChange={(e) => setProfileEmail(e.target.value)}
-                        className="w-full rounded bg-zinc-900 border border-zinc-800 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent transition-colors"
+                        className="w-full rounded bg-zinc-900/50 border border-zinc-800 px-3.5 py-2.5 text-xs text-zinc-500 cursor-not-allowed"
                       />
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-zinc-450 uppercase tracking-wider mb-1.5">Avatar URL (Link ảnh)</label>
+                    <input
+                      type="text"
+                      value={avatarUrl}
+                      onChange={(e) => setAvatarUrl(e.target.value)}
+                      placeholder="https://example.com/avatar.png"
+                      className="w-full rounded bg-zinc-900 border border-zinc-800 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent transition-colors"
+                    />
                   </div>
 
                   <div className="space-y-3 pt-3 border-t border-white/5">

@@ -6,7 +6,8 @@ import { AppCard } from '../components/AppCard';
 import { AppDetailModal } from '../components/AppDetailModal';
 import { ArticleCard } from '../components/ArticleCard';
 import { ArticleDetailModal } from '../components/ArticleDetailModal';
-import { appsData, articlesData, membersData, AppData, ArticleData } from '../data/mockData';
+import { articlesData, membersData, ArticleData } from '../data/mockData';
+import { fetchApps, AppData } from '../lib/apps';
 import { Star, Code, Shield, Terminal, Cpu, Zap, Eye, ChevronRight } from 'lucide-react';
 
 const HeroButton = ({ children, primary, onClick, className }: { children: React.ReactNode; primary?: boolean; onClick?: (e: React.MouseEvent) => void; className?: string }) => {
@@ -183,24 +184,34 @@ export const Home: React.FC<HomeProps> = ({ setRoute, isLoggedIn, onLoginSuccess
   const [quickPass, setQuickPass] = useState('');
   const [selectedApp, setSelectedApp] = useState<AppData | null>(null);
   const [selectedArticle, setSelectedArticle] = useState<ArticleData | null>(null);
-  const [apps, setApps] = useState<AppData[]>(appsData);
+  const [apps, setApps] = useState<AppData[]>([]);
   const [articles, setArticles] = useState<ArticleData[]>(articlesData);
 
   useEffect(() => {
     const loadData = () => {
-      const storedApps = localStorage.getItem('sn_apps_db');
-      if (storedApps) setApps(JSON.parse(storedApps));
-      
       const storedArticles = localStorage.getItem('sn_articles_db');
       if (storedArticles) setArticles(JSON.parse(storedArticles));
     };
     loadData();
-    window.addEventListener('apps-db-updated', loadData);
     window.addEventListener('articles-db-updated', loadData);
     return () => {
-      window.removeEventListener('apps-db-updated', loadData);
       window.removeEventListener('articles-db-updated', loadData);
     };
+  }, []);
+
+  useEffect(() => {
+    const loadApps = async () => {
+      try {
+        setApps(await fetchApps());
+      } catch (error) {
+        console.error('Error loading home apps:', error);
+        setApps([]);
+      }
+    };
+
+    loadApps();
+    window.addEventListener('apps-db-updated', loadApps);
+    return () => window.removeEventListener('apps-db-updated', loadApps);
   }, []);
 
   const handleQuickLogin = (e: React.FormEvent) => {
@@ -605,6 +616,7 @@ export const Home: React.FC<HomeProps> = ({ setRoute, isLoggedIn, onLoginSuccess
         {selectedApp && (
           <AppDetailModal
             app={selectedApp}
+            allApps={apps}
             onClose={() => setSelectedApp(null)}
           />
         )}

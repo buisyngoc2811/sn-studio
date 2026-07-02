@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AppData, appsData } from '../data/mockData';
+import { AppData } from '../lib/apps';
 import { 
   X, 
   Download, 
@@ -17,10 +17,11 @@ import {
 
 interface AppDetailModalProps {
   app: AppData;
+  allApps: AppData[];
   onClose: () => void;
 }
 
-export const AppDetailModal: React.FC<AppDetailModalProps> = ({ app, onClose }) => {
+export const AppDetailModal: React.FC<AppDetailModalProps> = ({ app, allApps, onClose }) => {
   const [isDownloaded, setIsDownloaded] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [downloadCount, setDownloadCount] = useState(0);
@@ -110,7 +111,7 @@ export const AppDetailModal: React.FC<AppDetailModalProps> = ({ app, onClose }) 
   };
 
   // Find related apps (same category, exclude current)
-  const relatedApps = appsData
+  const relatedApps = allApps
     .filter(a => a.category === app.category && a.id !== app.id)
     .slice(0, 3);
 
@@ -123,8 +124,7 @@ export const AppDetailModal: React.FC<AppDetailModalProps> = ({ app, onClose }) 
     "Tương thích hoàn toàn Windows 11 & macOS"
   ];
   const changelog = [
-    { v: app.version, date: app.updateDate, text: "Cập nhật hiệu năng xử lý và vá lỗi giao diện." },
-    { v: "Phiên bản trước", date: "Tháng trước", text: "Thêm tính năng đồng bộ đám mây và dark mode." }
+    { v: app.version, date: app.updateDate, text: app.changelog || "Cập nhật hiệu năng xử lý và vá lỗi giao diện." }
   ];
 
   const modalContent = (

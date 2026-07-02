@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Save } from 'lucide-react';
-import { AppData } from '../data/mockData';
+import { AppData } from '../lib/apps';
 
 interface AdminAppModalProps {
   isOpen: boolean;
@@ -24,12 +24,13 @@ export const AdminAppModal: React.FC<AdminAppModalProps> = ({ isOpen, onClose, a
         id: `app-${Date.now()}`,
         name: '',
         version: '1.0.0',
-        category: 'dev',
+        category: 'Development',
         categoryLabel: 'Phát triển',
         description: '',
         isFree: true,
+        price: '0đ',
         rating: 5.0,
-        downloads: 0,
+        downloads: '0',
         tags: [],
         iconType: 'terminal'
       });
@@ -107,7 +108,7 @@ export const AdminAppModal: React.FC<AdminAppModalProps> = ({ isOpen, onClose, a
                     required
                     type="text"
                     value={formData.category || ''}
-                    onChange={e => setFormData({...formData, category: e.target.value})}
+                    onChange={e => setFormData({...formData, category: e.target.value as AppData['category']})}
                     className="w-full rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-accent"
                   />
                 </div>
@@ -128,7 +129,7 @@ export const AdminAppModal: React.FC<AdminAppModalProps> = ({ isOpen, onClose, a
                   <label className="block text-xs font-bold text-zinc-400 mb-1">Icon Type</label>
                   <select
                     value={formData.iconType || 'terminal'}
-                    onChange={e => setFormData({...formData, iconType: e.target.value})}
+                    onChange={e => setFormData({...formData, iconType: e.target.value as AppData['iconType']})}
                     className="w-full rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-accent"
                   >
                     <option value="terminal">Terminal</option>
@@ -156,8 +157,8 @@ export const AdminAppModal: React.FC<AdminAppModalProps> = ({ isOpen, onClose, a
                   <input
                     required
                     type="number"
-                    value={formData.downloads || 0}
-                    onChange={e => setFormData({...formData, downloads: parseInt(e.target.value)})}
+                    value={formData.rawDownloads ?? formData.downloads ?? 0}
+                    onChange={e => setFormData({...formData, downloads: e.target.value, rawDownloads: parseInt(e.target.value, 10) || 0})}
                     className="w-full rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-accent"
                   />
                 </div>

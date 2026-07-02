@@ -12,8 +12,9 @@ import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Admin } from './pages/Admin';
 import { Search, X } from 'lucide-react';
-import { appsData, articlesData } from './data/mockData';
+import { articlesData } from './data/mockData';
 import { supabase } from './lib/supabase';
+import { fetchApps, AppData } from './lib/apps';
 
 interface Particle {
   id: number;
@@ -42,6 +43,7 @@ export const App: React.FC = () => {
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState<string>('');
+  const [searchApps, setSearchApps] = useState<AppData[]>([]);
   const [particles, setParticles] = useState<Particle[]>([]);
   const spotlightRef = useRef<HTMLDivElement>(null);
 
@@ -58,6 +60,21 @@ export const App: React.FC = () => {
     });
 
     return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const loadSearchApps = async () => {
+      try {
+        setSearchApps(await fetchApps());
+      } catch (error) {
+        console.error('Error loading apps for search:', error);
+        setSearchApps([]);
+      }
+    };
+
+    loadSearchApps();
+    window.addEventListener('apps-db-updated', loadSearchApps);
+    return () => window.removeEventListener('apps-db-updated', loadSearchApps);
   }, []);
 
   // Mouse spotlight tracking
@@ -121,7 +138,7 @@ export const App: React.FC = () => {
   }
 
   // Search filtering
-  const matchingApps = globalSearchQuery.trim() === '' ? [] : appsData.filter(app =>
+  const matchingApps = globalSearchQuery.trim() === '' ? [] : searchApps.filter(app =>
     app.name.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
     app.description.toLowerCase().includes(globalSearchQuery.toLowerCase())
   );

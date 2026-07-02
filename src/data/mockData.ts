@@ -1,19 +1,3 @@
-export interface AppData {
-  id: string;
-  name: string;
-  version: string;
-  description: string;
-  category: 'System' | 'Development' | 'Security' | 'Automation';
-  categoryLabel: string;
-  isFree: boolean;
-  price: string;
-  rating: number;
-  downloads: string;
-  updateDate: string;
-  iconType: 'terminal' | 'shield' | 'code' | 'zap' | 'cpu';
-  tags: string[];
-}
-
 export interface ArticleData {
   id: string;
   title: string;
@@ -76,84 +60,6 @@ export interface MemberData {
 }
 
 // ---------------- MOCK DATA IMPLEMENTATIONS ----------------
-
-export const appsData: AppData[] = [
-  {
-    id: 'sn-shell',
-    name: 'SN Terminal Pro',
-    version: 'v2.4.1',
-    description: 'Trình giả lập terminal tối tân với hiệu năng GPU cao, tích hợp AI autocomplete và giao diện tab linh hoạt cho lập trình viên.',
-    category: 'System',
-    categoryLabel: 'Hệ thống',
-    isFree: true,
-    price: '0đ',
-    rating: 4.9,
-    downloads: '8.4K',
-    updateDate: '24/06/2026',
-    iconType: 'terminal',
-    tags: ['GPU Accelerated', 'AI Assistant', 'Cross Platform']
-  },
-  {
-    id: 'sn-guardian',
-    name: 'SN Guardian Shield',
-    version: 'v1.8.0',
-    description: 'Hệ thống quét mã độc thời gian thực, phát hiện xâm nhập cổng mạng và bảo mật tài sản số toàn diện cho máy chủ doanh nghiệp.',
-    category: 'Security',
-    categoryLabel: 'Bảo mật',
-    isFree: false,
-    price: '350.000đ',
-    rating: 4.8,
-    downloads: '3.2K',
-    updateDate: '12/06/2026',
-    iconType: 'shield',
-    tags: ['Real-time Scan', 'Network Monitor', 'Zero-Trust']
-  },
-  {
-    id: 'sn-builder',
-    name: 'SN Code Compiler',
-    version: 'v3.1.2',
-    description: 'Bộ công cụ đóng gói và tối ưu hóa mã nguồn siêu tốc, thay thế trực tiếp webpack/esbuild với hiệu năng tốt hơn tới 40%.',
-    category: 'Development',
-    categoryLabel: 'Phát triển',
-    isFree: true,
-    price: '0đ',
-    rating: 4.7,
-    downloads: '12.8K',
-    updateDate: '01/07/2026',
-    iconType: 'code',
-    tags: ['Build Tool', 'Fast Compiling', 'Rust Powered']
-  },
-  {
-    id: 'sn-flow',
-    name: 'SN Flow Automation',
-    version: 'v2.0.0',
-    description: 'Nền tảng tự động hóa quy trình nghiệp vụ thông minh, kết nối APIs và quản lý tác vụ nền không cần viết mã.',
-    category: 'Automation',
-    categoryLabel: 'Tự động hóa',
-    isFree: false,
-    price: '590.000đ',
-    rating: 4.9,
-    downloads: '2.1K',
-    updateDate: '28/05/2026',
-    iconType: 'zap',
-    tags: ['No-Code Workflow', 'API Integrations', 'Cron Tasks']
-  },
-  {
-    id: 'sn-kernel-tuner',
-    name: 'SN Kernel Tuner',
-    version: 'v1.1.5',
-    description: 'Quản lý xung nhịp CPU, giải phóng RAM thông minh và tối ưu hóa hệ điều hành Windows/Linux cho các tác vụ tải nặng.',
-    category: 'System',
-    categoryLabel: 'Hệ thống',
-    isFree: true,
-    price: '0đ',
-    rating: 4.6,
-    downloads: '6.7K',
-    updateDate: '15/06/2026',
-    iconType: 'cpu',
-    tags: ['OS Optimization', 'RAM Cleaner', 'CPU Governor']
-  }
-];
 
 export const articlesData: ArticleData[] = [
   {
