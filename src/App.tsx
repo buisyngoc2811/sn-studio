@@ -13,6 +13,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Admin } from './pages/Admin';
 import { Search, X } from 'lucide-react';
 import { appsData, articlesData } from './data/mockData';
+import { supabase } from './lib/supabase';
 
 interface Particle {
   id: number;
@@ -36,12 +37,28 @@ const pageTransitionConfig = {
 
 export const App: React.FC = () => {
   const [currentRoute, setRoute] = useState<string>('home');
-  const [username, setUsername] = useState<string>(() => localStorage.getItem('sn_user') || '');
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => !!localStorage.getItem('sn_user'));
+  const [username, setUsername] = useState<string>('');
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState<string>('');
   const [particles, setParticles] = useState<Particle[]>([]);
   const spotlightRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsLoggedIn(!!session);
+      setUsername(session?.user?.email || '');
+      setIsAuthLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsLoggedIn(!!session);
+      setUsername(session?.user?.email || '');
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   // Mouse spotlight tracking
   const handleMouseMove = useCallback((e: MouseEvent) => {
@@ -90,18 +107,18 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSearchOpen]);
 
-  const handleLoginSuccess = (user: string) => {
-    setIsLoggedIn(true);
-    setUsername(user);
-    localStorage.setItem('sn_user', user);
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setRoute('login');
   };
 
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setUsername('');
-    localStorage.removeItem('sn_user');
-    setRoute('home');
+  const handleLoginSuccess = (user: string) => {
+    // Session state handled by onAuthStateChange
   };
+
+  if (isAuthLoading) {
+    return <div className="h-screen w-screen flex items-center justify-center bg-[#050507] text-white">Đang tải...</div>;
+  }
 
   // Search filtering
   const matchingApps = globalSearchQuery.trim() === '' ? [] : appsData.filter(app =>

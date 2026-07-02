@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ShimmerButton } from '../components/ShimmerButton';
+import { supabase } from '../lib/supabase';
 
 interface LoginProps {
   onLoginSuccess: (username: string) => void;
@@ -21,7 +22,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, setRoute }) => {
   const strengthColors = ['bg-zinc-800', 'bg-red-500', 'bg-amber-500', 'bg-emerald-500'];
   const strengthText = ['', 'Yếu', 'Trung bình', 'Mạnh'];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -39,40 +40,38 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, setRoute }) => {
       return;
     }
     
-    const usersStr = localStorage.getItem('sn_users');
-    const users = usersStr ? JSON.parse(usersStr) : {};
+    setIsLoading(true);
 
     if (isRegister) {
-      if (users[username]) {
-        alert('Tài khoản này đã tồn tại!');
+      const { data, error } = await supabase.auth.signUp({
+        email: username,
+        password: password,
+      });
+
+      setIsLoading(false);
+
+      if (error) {
+        alert(`Đăng ký thất bại: ${error.message}`);
         return;
       }
-      users[username] = password;
-      localStorage.setItem('sn_users', JSON.stringify(users));
-      alert(`Đăng ký thành công! Chào mừng ${username}.`);
-      onLoginSuccess(username);
-      setRoute('dashboard');
+      
+      alert(`Đăng ký thành công! Vui lòng kiểm tra email để xác nhận (nếu có yêu cầu).`);
+      setIsRegister(false);
+      
     } else {
-      setIsLoading(true);
-      setTimeout(() => {
-        setIsLoading(false);
-        if (users[username] && users[username] !== password) {
-          setErrorMsg('Tài khoản hoặc mật khẩu không chính xác!');
-          return;
-        }
-        
-        // If user doesn't exist in local DB but tries to login (fallback for mock)
-        if (!users[username]) {
-          users[username] = password;
-          localStorage.setItem('sn_users', JSON.stringify(users));
-        }
-        
-        setShowToast(true);
-        setTimeout(() => {
-          onLoginSuccess(username);
-          setRoute('dashboard');
-        }, 1200);
-      }, 1000);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: username,
+        password: password,
+      });
+      
+      setIsLoading(false);
+
+      if (error) {
+        setErrorMsg('Tài khoản hoặc mật khẩu không chính xác!');
+      } else if (data.session) {
+        onLoginSuccess(data.session.user?.email || 'User');
+        setRoute('dashboard');
+      }
     }
   };
 
