@@ -2,38 +2,37 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Save, ShieldAlert } from 'lucide-react';
-import { MemberData } from '../data/mockData';
+import { ProfileRow } from '../lib/profiles';
 
 interface AdminUserModalProps {
   isOpen: boolean;
   onClose: () => void;
-  user: MemberData | null;
-  onSave: (user: MemberData) => void;
+  user: ProfileRow | null;
+  onSave: (user: ProfileRow) => void;
 }
 
 export const AdminUserModal: React.FC<AdminUserModalProps> = ({ isOpen, onClose, user, onSave }) => {
-  const [formData, setFormData] = useState<Partial<MemberData>>({});
+  const [formData, setFormData] = useState<Partial<ProfileRow>>({});
 
   useEffect(() => {
     if (user) {
       setFormData(user);
     } else {
       setFormData({
-        id: `user-${Date.now()}`,
-        name: '',
+        id: crypto.randomUUID(),
+        username: '',
+        display_name: '',
         email: '',
-        role: 'User',
+        role: 'user',
         status: 'Active',
-        avatarSeed: `seed-${Date.now()}`,
-        rank: 'Vàng',
-        contributions: 0
+        avatar_url: '',
       });
     }
   }, [user, isOpen]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(formData as MemberData);
+    onSave(formData as ProfileRow);
     onClose();
   };
 
@@ -72,8 +71,19 @@ export const AdminUserModal: React.FC<AdminUserModalProps> = ({ isOpen, onClose,
                 <input
                   required
                   type="text"
-                  value={formData.name || ''}
-                  onChange={e => setFormData({...formData, name: e.target.value})}
+                  value={formData.display_name || ''}
+                  onChange={e => setFormData({...formData, display_name: e.target.value})}
+                  className="w-full rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-accent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 mb-1">Username</label>
+                <input
+                  required
+                  type="text"
+                  value={formData.username || ''}
+                  onChange={e => setFormData({...formData, username: e.target.value})}
                   className="w-full rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-accent"
                 />
               </div>
@@ -89,19 +99,28 @@ export const AdminUserModal: React.FC<AdminUserModalProps> = ({ isOpen, onClose,
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 mb-1">Avatar URL</label>
+                <input
+                  type="text"
+                  value={formData.avatar_url || ''}
+                  onChange={e => setFormData({...formData, avatar_url: e.target.value})}
+                  className="w-full rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-accent"
+                  placeholder="https://..."
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-zinc-400 mb-1">Quyền hạn (Role)</label>
                   <select
-                    value={formData.role || 'User'}
+                    value={formData.role || 'user'}
                     onChange={e => setFormData({...formData, role: e.target.value})}
                     className="w-full rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-accent"
                   >
-                    <option value="User">User</option>
-                    <option value="Active Member">Active Member</option>
-                    <option value="VIP Member">VIP Member</option>
-                    <option value="Developer">Developer</option>
-                    <option value="Administrator">Administrator</option>
+                    <option value="user">User</option>
+                    <option value="developer">Developer</option>
+                    <option value="admin">Admin</option>
                   </select>
                 </div>
 
@@ -109,7 +128,7 @@ export const AdminUserModal: React.FC<AdminUserModalProps> = ({ isOpen, onClose,
                   <label className="block text-xs font-bold text-zinc-400 mb-1">Trạng thái (Status)</label>
                   <select
                     value={formData.status || 'Active'}
-                    onChange={e => setFormData({...formData, status: e.target.value as any})}
+                    onChange={e => setFormData({...formData, status: e.target.value as ProfileRow['status']})}
                     className={`w-full rounded bg-zinc-900 border px-3 py-2 text-sm focus:outline-none focus:border-brand-accent ${formData.status === 'Banned' ? 'border-red-500/50 text-red-400' : 'border-zinc-800 text-emerald-400'}`}
                   >
                     <option value="Active">Hoạt động</option>
@@ -121,7 +140,7 @@ export const AdminUserModal: React.FC<AdminUserModalProps> = ({ isOpen, onClose,
               {formData.status === 'Banned' && (
                 <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 flex items-start gap-2">
                   <ShieldAlert size={16} className="text-red-400 mt-0.5 shrink-0" />
-                  <p className="text-[11px] text-red-300">Tài khoản này hiện đang bị đình chỉ. Không thể đăng nhập hoặc thực hiện thao tác trên hệ thống.</p>
+                  <p className="text-[11px] text-red-300">Tài khoản này hiện đang bị đình chỉ trong hồ sơ Supabase.</p>
                 </div>
               )}
 

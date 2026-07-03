@@ -15,7 +15,7 @@ import {
   Globe,
   Star
 } from 'lucide-react';
-import { ArticleData, MemberData, membersData } from '../data/mockData';
+import { ArticleData } from '../data/mockData';
 import { AdminAppModal } from '../components/AdminAppModal';
 import { AdminArticleModal } from '../components/AdminArticleModal';
 import { AdminMarketModal } from '../components/AdminMarketModal';
@@ -29,6 +29,7 @@ import {
   deleteAppVersion,
   AppData
 } from '../lib/apps';
+import { deleteProfile, fetchProfiles, ProfileRow, saveProfile, updateProfileStatus } from '../lib/profiles';
 import {
   deleteMarketplaceCategory,
   MarketplaceItem,
@@ -70,12 +71,11 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
 
   // User Modal States
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<MemberData | null>(null);
+  const [editingUser, setEditingUser] = useState<ProfileRow | null>(null);
   const [userSearchQuery, setUserSearchQuery] = useState('');
 
   // Local Storage Data States
-  const [users, setUsers] = useState<Record<string, string>>({});
-  const [members, setMembers] = useState(membersData);
+  const [profiles, setProfiles] = useState<ProfileRow[]>([]);
   const [apps, setApps] = useState<AppData[]>([]);
   const [articles, setArticles] = useState(articlesData);
   const [marketItems, setMarketItems] = useState<MarketplaceItem[]>([]);
@@ -126,18 +126,22 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
         setMarketItems([]);
       }
     };
+    const loadProfiles = async () => {
+      try {
+        setProfiles(await fetchProfiles());
+      } catch (error) {
+        console.error('Error loading admin profiles:', error);
+        setProfiles([]);
+      }
+    };
 
     loadApps();
     loadMarketItems();
+    loadProfiles();
 
     // Load Settings
     const settingsStr = localStorage.getItem('sn_settings');
     if (settingsStr) setSysSettings(JSON.parse(settingsStr));
-
-    // Load Members
-    const membersStr = localStorage.getItem('sn_members_db');
-    if (membersStr) setMembers(JSON.parse(membersStr));
-    else localStorage.setItem('sn_members_db', JSON.stringify(membersData));
 
     // Load Purchases
     const purchasesStr = localStorage.getItem('sn_purchases');
@@ -145,25 +149,13 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
 
     window.addEventListener('apps-db-updated', loadApps);
     window.addEventListener('market-db-updated', loadMarketItems);
+    window.addEventListener('profiles-db-updated', loadProfiles);
     return () => {
       window.removeEventListener('apps-db-updated', loadApps);
       window.removeEventListener('market-db-updated', loadMarketItems);
+      window.removeEventListener('profiles-db-updated', loadProfiles);
     };
   }, []);
-
-  const handleDeleteUser = (userKey: string) => {
-    if (userKey === 'admin@gmail.com' || userKey === 'admin@snstudio.vn') {
-      alert('Không thể xóa tài khoản Quản trị viên tối cao!');
-      return;
-    }
-    if (window.confirm(`Xóa người dùng ${userKey}?`)) {
-      const newUsers = { ...users };
-      delete newUsers[userKey];
-      setUsers(newUsers);
-      localStorage.setItem('sn_users', JSON.stringify(newUsers));
-      alert(`Đã xóa tài khoản: ${userKey}`);
-    }
-  };
 
   const handleDeleteApp = async (id: string) => {
     if (window.confirm('Xóa ứng dụng này?')) {
@@ -373,40 +365,43 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
     }
   };
 
-  const handleDeleteMember = (id: string) => {
-    if (window.confirm('Xóa thành viên này khỏi hệ thống?')) {
-      const newMembers = members.filter(m => m.id !== id);
-      setMembers(newMembers);
-      localStorage.setItem('sn_members_db', JSON.stringify(newMembers));
-      window.dispatchEvent(new Event('members-db-updated'));
+  const reloadProfiles = async () => {
+    setProfiles(await fetchProfiles());
+    window.dispatchEvent(new Event('profiles-db-updated'));
+  };
+
+  const handleDeleteMember = async (id: string) => {
+    const profile = profiles.find(item => item.id === id);
+    if (profile?.email === 'admin@gmail.com' || profile?.email === 'admin@snstudio.vn') {
+      alert('Không thể xóa tài khoản Quản trị viên tối cao!');
+      return;
+    }
+    if (!window.confirm('Xóa hồ sơ người dùng này khỏi Supabase?')) return;
+
+    try {
+      await deleteProfile(id);
+      await reloadProfiles();
+    } catch (error: any) {
+      alert(`Không thể xóa hồ sơ: ${error.message}`);
     }
   };
 
-  const handleSaveMember = (member: MemberData) => {
-    let newMembers = [...members];
-    const existingIndex = newMembers.findIndex(m => m.id === member.id);
-    
-    if (existingIndex >= 0) {
-      newMembers[existingIndex] = member;
-    } else {
-      newMembers = [member, ...newMembers];
+  const handleSaveMember = async (profile: ProfileRow) => {
+    try {
+      await saveProfile(profile);
+      await reloadProfiles();
+    } catch (error: any) {
+      alert(`Không thể lưu hồ sơ: ${error.message}`);
     }
-    
-    setMembers(newMembers);
-    localStorage.setItem('sn_members_db', JSON.stringify(newMembers));
-    window.dispatchEvent(new Event('members-db-updated'));
   };
 
-  const handleToggleBan = (id: string) => {
-    let newMembers = members.map(m => {
-      if (m.id === id) {
-        return { ...m, status: m.status === 'Banned' ? 'Active' : 'Banned' } as MemberData;
-      }
-      return m;
-    });
-    setMembers(newMembers);
-    localStorage.setItem('sn_members_db', JSON.stringify(newMembers));
-    window.dispatchEvent(new Event('members-db-updated'));
+  const handleToggleBan = async (profile: ProfileRow) => {
+    try {
+      await updateProfileStatus(profile.id, profile.status === 'Banned' ? 'Active' : 'Banned');
+      await reloadProfiles();
+    } catch (error: any) {
+      alert(`Không thể cập nhật trạng thái: ${error.message}`);
+    }
   };
 
   const handleSaveSettings = (e: React.FormEvent) => {
@@ -419,8 +414,7 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
   const handleBackup = () => {
     const backupData = {
       settings: sysSettings,
-      users: users,
-      members: members,
+      profiles: profiles,
       apps: apps,
       articles: articles,
       marketItems: marketItems
@@ -446,7 +440,6 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
           try {
             const data = JSON.parse(event.target?.result as string);
             if (data.settings) setSysSettings(data.settings);
-            if (data.members) setMembers(data.members);
             if (data.articles) setArticles(data.articles);
             alert('Khôi phục dữ liệu thành công! Vui lòng tải lại trang.');
           } catch (err) {
@@ -760,29 +753,37 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
                       </tr>
                     </thead>
                     <tbody>
-                      {members.filter(m => 
-                        m.name.toLowerCase().includes(userSearchQuery.toLowerCase()) || 
-                        (m.email && m.email.toLowerCase().includes(userSearchQuery.toLowerCase())) ||
-                        m.role.toLowerCase().includes(userSearchQuery.toLowerCase())
-                      ).map(member => (
-                        <tr key={member.id} className="border-b border-zinc-800/50 hover:bg-white/[0.02] transition-colors">
+                      {profiles.filter(profile => {
+                        const term = userSearchQuery.toLowerCase();
+                        return (
+                          (profile.display_name || '').toLowerCase().includes(term) ||
+                          (profile.username || '').toLowerCase().includes(term) ||
+                          (profile.email || '').toLowerCase().includes(term) ||
+                          (profile.role || '').toLowerCase().includes(term)
+                        );
+                      }).map(profile => (
+                        <tr key={profile.id} className="border-b border-zinc-800/50 hover:bg-white/[0.02] transition-colors">
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-brand-500/10 flex items-center justify-center font-bold text-brand-400 text-xs border border-brand-500/20 uppercase shrink-0">
-                                {member.avatarSeed.substring(0, 2)}
+                              <div className="w-8 h-8 rounded-full bg-brand-500/10 flex items-center justify-center font-bold text-brand-400 text-xs border border-brand-500/20 uppercase shrink-0 overflow-hidden">
+                                {profile.avatar_url ? (
+                                  <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" />
+                                ) : (
+                                  (profile.display_name || profile.username || profile.email || 'US').substring(0, 2)
+                                )}
                               </div>
                               <div>
-                                <div className="font-bold text-white text-xs">{member.name}</div>
-                                <div className="text-[10px] text-zinc-500 mt-0.5">{member.email || `${member.avatarSeed}@snstudio.vn`}</div>
+                                <div className="font-bold text-white text-xs">{profile.display_name || profile.username || 'Chưa đặt tên'}</div>
+                                <div className="text-[10px] text-zinc-500 mt-0.5">@{profile.username || 'unknown'} • {profile.email || 'no-email'}</div>
                               </div>
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <div className="text-xs text-zinc-300">{member.role}</div>
-                            <div className="text-[10px] text-brand-400 font-semibold mt-0.5">{member.rank}</div>
+                            <div className="text-xs text-zinc-300">{profile.role || 'user'}</div>
+                            <div className="text-[10px] text-brand-400 font-semibold mt-0.5">{profile.id}</div>
                           </td>
                           <td className="px-4 py-3">
-                            {member.status === 'Banned' ? (
+                            {profile.status === 'Banned' ? (
                               <span className="px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-bold tracking-wider">BANNED</span>
                             ) : (
                               <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold tracking-wider">ACTIVE</span>
@@ -791,14 +792,14 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
                           <td className="px-4 py-3 text-right">
                             <div className="flex justify-end gap-1.5">
                               <button 
-                                onClick={() => handleToggleBan(member.id)}
-                                className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${member.status === 'Banned' ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20' : 'bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'}`}
+                                onClick={() => handleToggleBan(profile)}
+                                className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${profile.status === 'Banned' ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20' : 'bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'}`}
                               >
-                                {member.status === 'Banned' ? 'Mở Khóa' : 'Đình Chỉ'}
+                                {profile.status === 'Banned' ? 'Mở Khóa' : 'Đình Chỉ'}
                               </button>
                               <button 
                                 onClick={() => {
-                                  setEditingUser(member);
+                                  setEditingUser(profile);
                                   setIsUserModalOpen(true);
                                 }}
                                 className="px-2 py-1 text-[10px] font-bold rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
@@ -806,7 +807,7 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
                                 Sửa
                               </button>
                               <button 
-                                onClick={() => handleDeleteMember(member.id)}
+                                onClick={() => handleDeleteMember(profile.id)}
                                 className="px-2 py-1 text-[10px] font-bold rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
                               >
                                 Xóa
