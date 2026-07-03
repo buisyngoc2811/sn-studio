@@ -55,6 +55,17 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, setRoute }) => {
         return;
       }
       
+      if (data.user) {
+        await supabase.from('profiles').insert({
+          id: data.user.id,
+          username: username.split('@')[0],
+          display_name: username.split('@')[0],
+          email: username,
+          role: 'user',
+          avatar_url: ''
+        });
+      }
+
       alert(`Đăng ký thành công! Vui lòng kiểm tra email để xác nhận (nếu có yêu cầu).`);
       setIsRegister(false);
       

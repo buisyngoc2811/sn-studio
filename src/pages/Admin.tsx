@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { articlesData, marketplaceData } from '../data/mockData';
+import { articlesData } from '../data/mockData';
 import { 
   LayoutDashboard, 
   Settings, 
@@ -14,12 +14,18 @@ import {
   Database,
   Globe
 } from 'lucide-react';
-import { ArticleData, MarketplaceItem, MemberData, membersData } from '../data/mockData';
+import { ArticleData, MemberData, membersData } from '../data/mockData';
 import { AdminAppModal } from '../components/AdminAppModal';
 import { AdminArticleModal } from '../components/AdminArticleModal';
 import { AdminMarketModal } from '../components/AdminMarketModal';
 import { AdminUserModal } from '../components/AdminUserModal';
 import { fetchApps, saveApp as saveSupabaseApp, deleteApp as deleteSupabaseApp, AppData } from '../lib/apps';
+import {
+  MarketplaceItem,
+  fetchMarketplaceItems,
+  saveMarketplaceItem,
+  deleteMarketplaceItem,
+} from '../lib/marketplace';
 
 interface AdminProps {
   username: string;
@@ -53,7 +59,7 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
   const [members, setMembers] = useState(membersData);
   const [apps, setApps] = useState<AppData[]>([]);
   const [articles, setArticles] = useState(articlesData);
-  const [marketItems, setMarketItems] = useState(marketplaceData);
+  const [marketItems, setMarketItems] = useState<MarketplaceItem[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
 
   // System Settings State
@@ -75,8 +81,18 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
         setApps([]);
       }
     };
+    const loadMarketItems = async () => {
+      try {
+        const result = await fetchMarketplaceItems({ page: 1, pageSize: 100, sortBy: 'newest' });
+        setMarketItems(result.items);
+      } catch (error) {
+        console.error('Error loading admin marketplace:', error);
+        setMarketItems([]);
+      }
+    };
 
     loadApps();
+    loadMarketItems();
 
     // Load Settings
     const settingsStr = localStorage.getItem('sn_settings');
@@ -87,17 +103,16 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
     if (membersStr) setMembers(JSON.parse(membersStr));
     else localStorage.setItem('sn_members_db', JSON.stringify(membersData));
 
-    // Load Marketplace
-    const marketStr = localStorage.getItem('sn_market_db');
-    if (marketStr) setMarketItems(JSON.parse(marketStr));
-    else localStorage.setItem('sn_market_db', JSON.stringify(marketplaceData));
-
     // Load Purchases
     const purchasesStr = localStorage.getItem('sn_purchases');
     if (purchasesStr) setPurchases(JSON.parse(purchasesStr));
 
     window.addEventListener('apps-db-updated', loadApps);
-    return () => window.removeEventListener('apps-db-updated', loadApps);
+    window.addEventListener('market-db-updated', loadMarketItems);
+    return () => {
+      window.removeEventListener('apps-db-updated', loadApps);
+      window.removeEventListener('market-db-updated', loadMarketItems);
+    };
   }, []);
 
   const handleDeleteUser = (userKey: string) => {
@@ -160,28 +175,28 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
     window.dispatchEvent(new Event('articles-db-updated'));
   };
 
-  const handleDeleteMarket = (id: string) => {
+  const handleDeleteMarket = async (id: string) => {
     if (window.confirm('Xóa sản phẩm này khỏi Marketplace?')) {
-      const newItems = marketItems.filter(m => m.id !== id);
-      setMarketItems(newItems);
-      localStorage.setItem('sn_market_db', JSON.stringify(newItems));
-      window.dispatchEvent(new Event('market-db-updated'));
+      try {
+        await deleteMarketplaceItem(id);
+        const result = await fetchMarketplaceItems({ page: 1, pageSize: 100, sortBy: 'newest' });
+        setMarketItems(result.items);
+        window.dispatchEvent(new Event('market-db-updated'));
+      } catch (error: any) {
+        alert(`Không thể xóa sản phẩm: ${error.message}`);
+      }
     }
   };
 
-  const handleSaveMarket = (item: MarketplaceItem) => {
-    let newItems = [...marketItems];
-    const existingIndex = newItems.findIndex(m => m.id === item.id);
-    
-    if (existingIndex >= 0) {
-      newItems[existingIndex] = item;
-    } else {
-      newItems = [item, ...newItems];
+  const handleSaveMarket = async (item: MarketplaceItem) => {
+    try {
+      await saveMarketplaceItem(item);
+      const result = await fetchMarketplaceItems({ page: 1, pageSize: 100, sortBy: 'newest' });
+      setMarketItems(result.items);
+      window.dispatchEvent(new Event('market-db-updated'));
+    } catch (error: any) {
+      alert(`Không thể lưu sản phẩm: ${error.message}`);
     }
-    
-    setMarketItems(newItems);
-    localStorage.setItem('sn_market_db', JSON.stringify(newItems));
-    window.dispatchEvent(new Event('market-db-updated'));
   };
 
   const handleDeleteMember = (id: string) => {
@@ -259,7 +274,6 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
             if (data.settings) setSysSettings(data.settings);
             if (data.members) setMembers(data.members);
             if (data.articles) setArticles(data.articles);
-            if (data.marketItems) setMarketItems(data.marketItems);
             alert('Khôi phục dữ liệu thành công! Vui lòng tải lại trang.');
           } catch (err) {
             alert('File sao lưu không hợp lệ!');
@@ -757,7 +771,7 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
                     <div key={mItem.id} className="flex items-center justify-between p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 hover:border-brand-500/20 transition-colors">
                       <div className="flex items-center gap-4">
                         <div className="w-10 h-10 rounded-lg bg-zinc-900 flex items-center justify-center flex-shrink-0 border border-zinc-800 text-zinc-400">
-                          {/* Mocks generic icon based on iconType roughly */}
+                          {/* Generic icon based on marketplace icon type */}
                           <div className="uppercase font-bold text-xs">{mItem.iconType.substring(0, 2)}</div>
                         </div>
                         <div>

@@ -20,6 +20,17 @@ export interface AppData {
   rawDownloads?: number;
   rawDate?: number;
   changelog?: string;
+  iconPath?: string;
+  iconUrl?: string;
+  downloadPath?: string;
+  versions?: AppVersion[];
+}
+
+export interface AppVersion {
+  version: string;
+  releaseDate: string;
+  changelog: string;
+  rawDate: number;
 }
 
 type AppRow = {
@@ -27,6 +38,8 @@ type AppRow = {
   name: string;
   description: string | null;
   icon_type: string | null;
+  icon_path: string | null;
+  download_path: string | null;
   rating: number | string | null;
   downloads_count: number | null;
   is_free: boolean | null;
@@ -84,6 +97,12 @@ const normalizeCategory = (slug: string | null): AppCategory => {
   return 'System';
 };
 
+const storageUrl = (bucket: string, path: string | null) => {
+  if (!path) return undefined;
+  if (path.startsWith('http')) return path;
+  return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+};
+
 const mapAppRow = (app: AppRow): AppData => {
   const versions = [...(app.app_versions || [])].sort(
     (a, b) => new Date(b.release_date).getTime() - new Date(a.release_date).getTime()
@@ -110,6 +129,15 @@ const mapAppRow = (app: AppRow): AppData => {
     iconType: normalizeIconType(app.icon_type),
     tags: app.tags || [],
     changelog: latestVersion?.changelog || '',
+    iconPath: app.icon_path || undefined,
+    iconUrl: storageUrl('app-icons', app.icon_path),
+    downloadPath: app.download_path || undefined,
+    versions: versions.map(version => ({
+      version: version.version_string,
+      releaseDate: new Date(version.release_date).toLocaleDateString('vi-VN'),
+      changelog: version.changelog || '',
+      rawDate: new Date(version.release_date).getTime(),
+    })),
   };
 };
 
@@ -121,6 +149,8 @@ export const fetchApps = async (): Promise<AppData[]> => {
       name,
       description,
       icon_type,
+      icon_path,
+      download_path,
       rating,
       downloads_count,
       is_free,
@@ -156,6 +186,8 @@ export const saveApp = async (app: AppData): Promise<AppData> => {
     description: app.description,
     category_id: category.id,
     icon_type: app.iconType,
+    icon_path: app.iconPath || app.iconUrl || null,
+    download_path: app.downloadPath || null,
     rating: app.rating,
     downloads_count: parseDownloads(app.rawDownloads ?? app.downloads),
     is_free: app.isFree,
@@ -194,4 +226,27 @@ export const saveApp = async (app: AppData): Promise<AppData> => {
 export const deleteApp = async (id: string): Promise<void> => {
   const { error } = await supabase.from('apps').delete().eq('id', id);
   if (error) throw error;
+};
+
+export const fetchApp = async (id: string): Promise<AppData | null> => {
+  const apps = await fetchApps();
+  return apps.find(app => app.id === id) || null;
+};
+
+export const incrementAppDownload = async (app: AppData): Promise<AppData> => {
+  const nextDownloads = (app.rawDownloads || parseDownloads(app.downloads)) + 1;
+  const { error } = await supabase
+    .from('apps')
+    .update({ downloads_count: nextDownloads })
+    .eq('id', app.id);
+
+  if (error) throw error;
+
+  const refreshed = await fetchApp(app.id);
+  if (!refreshed) throw new Error('Không thể tải lại ứng dụng sau khi cập nhật lượt tải.');
+  return refreshed;
+};
+
+export const getAppDownloadUrl = (app: AppData): string | undefined => {
+  return storageUrl('app-files', app.downloadPath || null);
 };

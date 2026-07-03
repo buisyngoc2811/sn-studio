@@ -33,6 +33,10 @@ export const AppCard: React.FC<AppCardProps> = ({ app, onDownload }) => {
   }, []);
 
   const renderIcon = () => {
+    if (app.iconUrl) {
+      return <img src={app.iconUrl} alt="" className="h-6 w-6 object-contain" />;
+    }
+
     const iconClass = "text-brand-accent group-hover:text-white transition-colors duration-300";
     switch (app.iconType) {
       case 'terminal': return <Terminal className={iconClass} size={22} />;

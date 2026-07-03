@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Save } from 'lucide-react';
-import { MarketplaceItem } from '../data/mockData';
+import { MarketplaceItem } from '../lib/marketplace';
 
 interface AdminMarketModalProps {
   isOpen: boolean;
@@ -32,10 +32,13 @@ export const AdminMarketModal: React.FC<AdminMarketModalProps> = ({ isOpen, onCl
         rating: 5,
         reviews: 0,
         downloads: '0',
+        rawDownloads: 0,
         seller: 'Admin',
         badge: '',
         iconType: 'puzzle',
-        cover: ''
+        cover: '',
+        currentVersion: 'v1.0.0',
+        downloadPath: ''
       });
       setTagsStr('');
       setScreenshotsStr('');
@@ -191,20 +194,46 @@ export const AdminMarketModal: React.FC<AdminMarketModalProps> = ({ isOpen, onCl
                     required
                     type="text"
                     value={formData.downloads || ''}
-                    onChange={e => setFormData({...formData, downloads: e.target.value})}
+                    onChange={e => {
+                      const downloads = e.target.value;
+                      const rawDownloads = parseInt(downloads.replace(/[^\d]/g, ''), 10) || 0;
+                      setFormData({...formData, downloads, rawDownloads});
+                    }}
                     className="w-full rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-accent"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-zinc-400 mb-1">Ảnh đại diện (Cover URL)</label>
-                <input
-                  type="text"
-                  value={formData.cover || ''}
-                  onChange={e => setFormData({...formData, cover: e.target.value})}
-                  className="w-full rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-accent"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 mb-1">Ảnh đại diện (Storage path hoặc URL)</label>
+                  <input
+                    type="text"
+                    value={formData.cover || ''}
+                    onChange={e => setFormData({...formData, cover: e.target.value})}
+                    className="w-full rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-accent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 mb-1">File tải xuống (Storage path)</label>
+                  <input
+                    type="text"
+                    value={formData.downloadPath || ''}
+                    onChange={e => setFormData({...formData, downloadPath: e.target.value})}
+                    className="w-full rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-accent"
+                    placeholder="marketplace/product/file.zip"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 mb-1">Phiên bản hiện tại</label>
+                  <input
+                    type="text"
+                    value={formData.currentVersion || ''}
+                    onChange={e => setFormData({...formData, currentVersion: e.target.value})}
+                    className="w-full rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-accent"
+                    placeholder="v1.0.0"
+                  />
+                </div>
               </div>
 
               <div>

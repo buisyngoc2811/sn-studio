@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AppData } from '../lib/apps';
+import { AppData, getAppDownloadUrl, incrementAppDownload } from '../lib/apps';
 import { 
   X, 
   Download, 
@@ -19,13 +19,16 @@ interface AppDetailModalProps {
   app: AppData;
   allApps: AppData[];
   onClose: () => void;
+  setRoute?: (route: string) => void;
+  onAppUpdated?: (app: AppData) => void;
 }
 
-export const AppDetailModal: React.FC<AppDetailModalProps> = ({ app, allApps, onClose }) => {
+export const AppDetailModal: React.FC<AppDetailModalProps> = ({ app, allApps, onClose, setRoute, onAppUpdated }) => {
   const [isDownloaded, setIsDownloaded] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [downloadCount, setDownloadCount] = useState(0);
   const [showToast, setShowToast] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Parse download string (e.g., '8.4K') to a base number for simulation
   const parseDownloads = (str: string) => {
@@ -60,24 +63,31 @@ export const AppDetailModal: React.FC<AppDetailModalProps> = ({ app, allApps, on
     };
   }, [app, onClose]);
 
-  const handleDownload = () => {
-    if (isDownloaded) return;
+  const handleDownload = async () => {
+    if (isDownloaded || isDownloading) return;
+    setIsDownloading(true);
 
-    // Save to downloaded apps
-    const downloaded = JSON.parse(localStorage.getItem('sn_downloaded_apps') || '[]');
-    downloaded.push(app.id);
-    localStorage.setItem('sn_downloaded_apps', JSON.stringify(downloaded));
-    setIsDownloaded(true);
+    try {
+      const updatedApp = await incrementAppDownload(app);
+      onAppUpdated?.(updatedApp);
+      window.dispatchEvent(new Event('apps-db-updated'));
 
-    // Increase stats
-    const stats = JSON.parse(localStorage.getItem('sn_app_stats') || '{}');
-    stats[app.id] = (stats[app.id] || 0) + 1;
-    localStorage.setItem('sn_app_stats', JSON.stringify(stats));
-    setDownloadCount(prev => prev + 1);
+      const downloaded = JSON.parse(localStorage.getItem('sn_downloaded_apps') || '[]');
+      if (!downloaded.includes(app.id)) downloaded.push(app.id);
+      localStorage.setItem('sn_downloaded_apps', JSON.stringify(downloaded));
+      setIsDownloaded(true);
+      setDownloadCount(updatedApp.rawDownloads || downloadCount + 1);
 
-    // Show toast
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
+      const url = getAppDownloadUrl(updatedApp);
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    } catch (error: any) {
+      alert(`Không thể tải ứng dụng: ${error.message}`);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const handleToggleSave = () => {
@@ -94,6 +104,10 @@ export const AppDetailModal: React.FC<AppDetailModalProps> = ({ app, allApps, on
   };
 
   const renderIcon = (iconType: string, size = 24) => {
+    if (app.iconUrl) {
+      return <img src={app.iconUrl} alt="" className="h-12 w-12 object-contain" />;
+    }
+
     switch (iconType) {
       case 'terminal': return <Terminal size={size} />;
       case 'shield': return <Shield size={size} />;
@@ -115,17 +129,13 @@ export const AppDetailModal: React.FC<AppDetailModalProps> = ({ app, allApps, on
     .filter(a => a.category === app.category && a.id !== app.id)
     .slice(0, 3);
 
-  // Mock data for new requirements
-  const fileSize = "45.2 MB";
-  const features = [
-    "Hỗ trợ giao diện Dark Premium",
-    "Tích hợp công nghệ lõi SN Engine mới nhất",
-    "Bảo mật dữ liệu end-to-end",
-    "Tương thích hoàn toàn Windows 11 & macOS"
-  ];
-  const changelog = [
-    { v: app.version, date: app.updateDate, text: app.changelog || "Cập nhật hiệu năng xử lý và vá lỗi giao diện." }
-  ];
+  const fileSize = app.downloadPath ? 'Supabase Storage' : 'Đang cập nhật';
+  const features = app.tags.length
+    ? app.tags.map(tag => `Tối ưu cho ${tag}`)
+    : ['Cấu hình tính năng được đồng bộ từ Supabase'];
+  const changelog = app.versions?.length
+    ? app.versions.map(version => ({ v: version.version, date: version.releaseDate, text: version.changelog }))
+    : [{ v: app.version, date: app.updateDate, text: app.changelog || "Cập nhật hiệu năng xử lý và vá lỗi giao diện." }];
 
   const modalContent = (
     <>
@@ -180,7 +190,7 @@ export const AppDetailModal: React.FC<AppDetailModalProps> = ({ app, allApps, on
                 <div className="flex gap-3">
                   <button
                     onClick={handleDownload}
-                    disabled={isDownloaded}
+                    disabled={isDownloaded || isDownloading}
                     className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${
                       isDownloaded 
                         ? 'bg-zinc-800 text-zinc-400 cursor-not-allowed' 
@@ -188,7 +198,7 @@ export const AppDetailModal: React.FC<AppDetailModalProps> = ({ app, allApps, on
                     }`}
                   >
                     <Download size={18} />
-                    {isDownloaded ? 'Đã tải xuống' : 'Tải xuống'}
+                    {isDownloading ? 'Đang tải...' : isDownloaded ? 'Đã tải xuống' : 'Tải xuống'}
                   </button>
                   <button
                     onClick={handleToggleSave}
@@ -201,6 +211,28 @@ export const AppDetailModal: React.FC<AppDetailModalProps> = ({ app, allApps, on
                     <Star size={18} className={isSaved ? 'fill-brand-400' : ''} />
                     {isSaved ? 'Đã lưu' : 'Lưu ứng dụng'}
                   </button>
+                  {setRoute && (
+                    <>
+                      <button
+                        onClick={() => {
+                          onClose();
+                          setRoute(`app-detail:${app.id}`);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all border border-white/[0.1] text-zinc-300 hover:bg-white/[0.05]"
+                      >
+                        Chi tiết
+                      </button>
+                      <button
+                        onClick={() => {
+                          onClose();
+                          setRoute('version-history');
+                        }}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all border border-white/[0.1] text-zinc-300 hover:bg-white/[0.05]"
+                      >
+                        Lịch sử
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

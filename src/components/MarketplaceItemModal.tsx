@@ -1,18 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MarketplaceItem } from '../data/mockData';
-import { X, ShoppingCart, Star, Palette, Puzzle, Wrench, Plug, CheckCircle } from 'lucide-react';
+import { X, ShoppingCart, Star, Palette, Puzzle, Wrench, Plug, CheckCircle, Download, FileText } from 'lucide-react';
+import {
+  MarketplaceItem,
+  addMarketplaceReview,
+  getMarketplaceDownloadUrl,
+  incrementMarketplaceDownload,
+} from '../lib/marketplace';
 
 interface MarketplaceItemModalProps {
   item: MarketplaceItem;
+  isLoggedIn: boolean;
+  setRoute: (route: string) => void;
   onClose: () => void;
   onOpenCart: () => void;
+  onItemUpdated: (item: MarketplaceItem) => void;
 }
 
-export const MarketplaceItemModal: React.FC<MarketplaceItemModalProps> = ({ item, onClose, onOpenCart }) => {
+export const MarketplaceItemModal: React.FC<MarketplaceItemModalProps> = ({
+  item,
+  isLoggedIn,
+  setRoute,
+  onClose,
+  onOpenCart,
+  onItemUpdated,
+}) => {
   const [isInCart, setIsInCart] = useState(false);
   const [isPurchased, setIsPurchased] = useState(false);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -21,21 +40,14 @@ export const MarketplaceItemModal: React.FC<MarketplaceItemModalProps> = ({ item
     window.addEventListener('keydown', handleKeyDown);
     document.body.style.overflow = 'hidden';
 
-    // Check cart
-    const cart = JSON.parse(localStorage.getItem('sn_cart') || '[]');
-    setIsInCart(cart.some((c: MarketplaceItem) => c.id === item.id));
-
-    // Check purchases
-    const purchases = JSON.parse(localStorage.getItem('sn_purchases') || '[]');
-    setIsPurchased(purchases.some((p: any) => p.id === item.id));
-
     const handleUpdate = () => {
-      const updatedCart = JSON.parse(localStorage.getItem('sn_cart') || '[]');
-      setIsInCart(updatedCart.some((c: MarketplaceItem) => c.id === item.id));
-      const updatedPurchases = JSON.parse(localStorage.getItem('sn_purchases') || '[]');
-      setIsPurchased(updatedPurchases.some((p: any) => p.id === item.id));
+      const cart = JSON.parse(localStorage.getItem('sn_cart') || '[]');
+      setIsInCart(cart.some((cartItem: any) => (typeof cartItem === 'string' ? cartItem : cartItem.id) === item.id));
+      const purchases = JSON.parse(localStorage.getItem('sn_purchases') || '[]');
+      setIsPurchased(purchases.some((purchase: any) => purchase.id === item.id || purchase.item_id === item.id));
     };
 
+    handleUpdate();
     window.addEventListener('cart-updated', handleUpdate);
 
     return () => {
@@ -48,17 +60,50 @@ export const MarketplaceItemModal: React.FC<MarketplaceItemModalProps> = ({ item
   const handleAddToCart = () => {
     if (isInCart || isPurchased) return;
     const cart = JSON.parse(localStorage.getItem('sn_cart') || '[]');
-    cart.push(item);
-    localStorage.setItem('sn_cart', JSON.stringify(cart));
+    cart.push(item.id);
+    localStorage.setItem('sn_cart', JSON.stringify(Array.from(new Set(cart.map((entry: any) => typeof entry === 'string' ? entry : entry.id)))));
     setIsInCart(true);
-    
-    // Dispatch event so CartDrawer updates
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('cart-updated'));
-    }
-    
-    // Auto open cart
+    window.dispatchEvent(new Event('cart-updated'));
     onOpenCart();
+  };
+
+  const handleDownload = async () => {
+    setIsDownloading(true);
+    try {
+      const updatedItem = await incrementMarketplaceDownload(item);
+      onItemUpdated(updatedItem);
+      const url = await getMarketplaceDownloadUrl(updatedItem);
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (error: any) {
+      alert(`Không thể tải xuống: ${error.message}`);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleSubmitReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isLoggedIn) {
+      alert('Vui lòng đăng nhập để gửi đánh giá.');
+      setRoute('login');
+      return;
+    }
+    if (!reviewComment.trim()) {
+      alert('Vui lòng nhập nội dung đánh giá.');
+      return;
+    }
+
+    setIsSubmittingReview(true);
+    try {
+      await addMarketplaceReview(item.id, reviewRating, reviewComment.trim());
+      setReviewComment('');
+      window.dispatchEvent(new Event('market-db-updated'));
+      alert('Đã gửi đánh giá thành công.');
+    } catch (error: any) {
+      alert(`Không thể gửi đánh giá: ${error.message}`);
+    } finally {
+      setIsSubmittingReview(false);
+    }
   };
 
   const renderIcon = (type: string, size = 48) => {
@@ -88,10 +133,8 @@ export const MarketplaceItemModal: React.FC<MarketplaceItemModalProps> = ({ item
           className="relative mx-auto w-full max-w-4xl rounded-2xl border border-white/[0.08] bg-[#0a0a0e] shadow-[0_24px_80px_rgba(0,0,0,0.8),0_0_60px_rgba(255,34,68,0.1)]"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Header background with gradient */}
           <div className="absolute top-0 inset-x-0 h-40 bg-gradient-to-b from-brand-accent/20 to-transparent opacity-50 pointer-events-none rounded-t-2xl" />
 
-          {/* Sticky Close Button */}
           <div className="sticky top-4 z-50 flex justify-end px-4 pt-4 -mb-12 pointer-events-none">
             <button
               onClick={onClose}
@@ -102,10 +145,9 @@ export const MarketplaceItemModal: React.FC<MarketplaceItemModalProps> = ({ item
           </div>
 
           <div className="relative z-10 p-8">
-            {/* Top Info Section */}
             <div className="flex flex-col md:flex-row gap-8 items-start">
-              <div className="flex-shrink-0 w-32 h-32 rounded-2xl bg-[#12121a] border border-white/[0.08] flex items-center justify-center text-brand-accent shadow-[0_0_30px_rgba(255,34,68,0.2)]">
-                {renderIcon(item.iconType)}
+              <div className="flex-shrink-0 w-32 h-32 rounded-2xl bg-[#12121a] border border-white/[0.08] flex items-center justify-center text-brand-accent shadow-[0_0_30px_rgba(255,34,68,0.2)] overflow-hidden">
+                {item.iconUrl ? <img src={item.iconUrl} alt="" className="h-20 w-20 object-contain" /> : renderIcon(item.iconType)}
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
@@ -121,6 +163,7 @@ export const MarketplaceItemModal: React.FC<MarketplaceItemModalProps> = ({ item
                   <span>Bán bởi: <strong className="text-white">{item.seller}</strong></span>
                   <span className="flex items-center gap-1 text-amber-400"><Star size={14} className="fill-amber-400"/> {item.rating} ({item.reviews} đánh giá)</span>
                   <span>{item.downloads} lượt tải</span>
+                  <span>Phiên bản: {item.currentVersion}</span>
                 </div>
                 
                 <div className="flex items-center gap-6 bg-white/[0.02] border border-white/[0.04] p-4 rounded-xl">
@@ -129,11 +172,17 @@ export const MarketplaceItemModal: React.FC<MarketplaceItemModalProps> = ({ item
                     <p className="text-2xl font-extrabold text-white">{item.price}</p>
                   </div>
                   <div className="w-[1px] h-12 bg-white/[0.08]" />
-                  <div className="flex-1">
+                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      onClick={handleDownload}
+                      disabled={isDownloading}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl font-bold text-sm bg-zinc-900 border border-zinc-800 text-zinc-200 hover:bg-brand-accent hover:border-brand-500/30 hover:text-white transition-all disabled:opacity-60"
+                    >
+                      <Download size={18} />
+                      {isDownloading ? 'Đang tải...' : 'Tải xuống'}
+                    </button>
                     {isPurchased ? (
-                      <button
-                        className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 cursor-default"
-                      >
+                      <button className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl font-bold text-sm bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 cursor-default">
                         <CheckCircle size={18} />
                         Đã sở hữu
                       </button>
@@ -141,14 +190,14 @@ export const MarketplaceItemModal: React.FC<MarketplaceItemModalProps> = ({ item
                       <button
                         onClick={handleAddToCart}
                         disabled={isInCart}
-                        className={`w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm transition-all shadow-[0_0_20px_rgba(255,34,68,0.3)] hover:shadow-[0_0_30px_rgba(255,34,68,0.5)] active:scale-95 border ${
+                        className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl font-bold text-sm transition-all shadow-[0_0_20px_rgba(255,34,68,0.3)] hover:shadow-[0_0_30px_rgba(255,34,68,0.5)] active:scale-95 border ${
                           isInCart
                             ? 'bg-zinc-800 border-zinc-700 text-zinc-400 cursor-not-allowed'
                             : 'bg-brand-accent border-brand-500/25 text-white hover:bg-brand-600'
                         }`}
                       >
                         <ShoppingCart size={18} />
-                        {isInCart ? 'Đã thêm vào giỏ hàng' : 'Thêm vào giỏ hàng'}
+                        {isInCart ? 'Đã thêm vào giỏ' : 'Thêm vào giỏ'}
                       </button>
                     )}
                   </div>
@@ -156,7 +205,6 @@ export const MarketplaceItemModal: React.FC<MarketplaceItemModalProps> = ({ item
               </div>
             </div>
 
-            {/* Description & Details */}
             <div className="mt-12 pt-8 border-t border-white/[0.06] space-y-8">
               <div>
                 <h3 className="text-xl font-bold text-white mb-4">Chi tiết sản phẩm</h3>
@@ -164,6 +212,59 @@ export const MarketplaceItemModal: React.FC<MarketplaceItemModalProps> = ({ item
                   {item.description} Đây là sản phẩm đạt chuẩn chất lượng cao cấp được kiểm duyệt bởi đội ngũ chuyên gia của SN Studio. 
                   Sử dụng sản phẩm này sẽ giúp tối ưu hóa hiệu suất làm việc và mang lại trải nghiệm chuyên nghiệp nhất cho dự án của bạn.
                 </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><FileText size={18}/> Lịch sử phiên bản</h3>
+                  <div className="space-y-3">
+                    {(item.versions || []).map(version => (
+                      <div key={version.id} className="rounded-xl border border-white/[0.04] bg-white/[0.02] p-4">
+                        <p className="text-sm font-bold text-white">{version.version} <span className="font-normal text-xs text-zinc-500 ml-2">{version.releaseDate}</span></p>
+                        <p className="text-xs text-zinc-400 mt-1">{version.changelog}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-bold text-white mb-4">Đánh giá & nhận xét</h3>
+                  <div className="space-y-3 max-h-56 overflow-y-auto custom-scrollbar pr-1">
+                    {(item.reviewItems || []).map(review => (
+                      <div key={review.id} className="rounded-xl border border-white/[0.04] bg-white/[0.02] p-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-bold text-white">{review.authorName}</p>
+                          <span className="text-xs text-amber-400">{review.rating} ★</span>
+                        </div>
+                        <p className="text-xs text-zinc-400 mt-1">{review.comment}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <form onSubmit={handleSubmitReview} className="mt-4 space-y-3">
+                    <div className="flex gap-2">
+                      <select
+                        value={reviewRating}
+                        onChange={(e) => setReviewRating(parseInt(e.target.value, 10))}
+                        className="rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent"
+                      >
+                        {[5, 4, 3, 2, 1].map(value => <option key={value} value={value}>{value} sao</option>)}
+                      </select>
+                      <input
+                        value={reviewComment}
+                        onChange={(e) => setReviewComment(e.target.value)}
+                        placeholder="Viết đánh giá..."
+                        className="flex-1 rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-brand-accent"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isSubmittingReview}
+                      className="rounded bg-brand-accent hover:bg-brand-600 px-4 py-2 text-xs font-bold text-white transition-colors disabled:opacity-60"
+                    >
+                      {isSubmittingReview ? 'Đang gửi...' : 'Gửi đánh giá'}
+                    </button>
+                  </form>
+                </div>
               </div>
 
               <div>

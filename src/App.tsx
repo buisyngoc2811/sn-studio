@@ -11,6 +11,8 @@ import { Docs } from './pages/Docs';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Admin } from './pages/Admin';
+import { AppDetailPage } from './pages/AppDetailPage';
+import { VersionHistory } from './pages/VersionHistory';
 import { Search, X } from 'lucide-react';
 import { articlesData } from './data/mockData';
 import { supabase } from './lib/supabase';
@@ -155,6 +157,10 @@ export const App: React.FC = () => {
   };
 
   const renderContent = () => {
+    if (currentRoute.startsWith('app-detail:')) {
+      return <AppDetailPage appId={currentRoute.replace('app-detail:', '')} setRoute={setRoute} />;
+    }
+
     switch (currentRoute) {
       case 'home':
         return <Home setRoute={setRoute} isLoggedIn={isLoggedIn} onLoginSuccess={handleLoginSuccess} />;
@@ -164,6 +170,8 @@ export const App: React.FC = () => {
         return <Knowledge />;
       case 'marketplace':
         return <Marketplace isLoggedIn={isLoggedIn} setRoute={setRoute} />;
+      case 'version-history':
+        return <VersionHistory setRoute={setRoute} />;
       case 'community':
         return <Community isLoggedIn={isLoggedIn} username={username} setRoute={setRoute} />;
       case 'docs':

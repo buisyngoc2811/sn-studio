@@ -166,6 +166,11 @@ export const Apps: React.FC<AppsProps> = ({ isLoggedIn, setRoute }) => {
             app={selectedApp}
             allApps={apps}
             onClose={() => setSelectedApp(null)}
+            setRoute={setRoute}
+            onAppUpdated={(updatedApp) => {
+              setApps(current => current.map(app => app.id === updatedApp.id ? updatedApp : app));
+              setSelectedApp(updatedApp);
+            }}
           />
         )}
       </AnimatePresence>

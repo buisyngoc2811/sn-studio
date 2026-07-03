@@ -10,24 +10,6 @@ export interface ArticleData {
   iconType: 'react' | 'linux' | 'lock' | 'cloud' | 'terminal';
 }
 
-export interface MarketplaceItem {
-  id: string;
-  name: string;
-  description: string;
-  price: string;
-  category: 'Themes' | 'Plugins' | 'Tools' | 'Extensions';
-  categoryLabel: string;
-  rating: number;
-  reviews: number;
-  downloads: string;
-  seller: string;
-  badge: 'Đặc biệt' | 'Phổ biến' | 'Mới' | '';
-  iconType: 'palette' | 'puzzle' | 'wrench' | 'plug';
-  cover?: string;
-  screenshots?: string[];
-  tags?: string[];
-}
-
 export interface CommunityThread {
   id: string;
   title: string;
@@ -105,65 +87,6 @@ export const articlesData: ArticleData[] = [
     readTime: '10 phút đọc',
     views: '930 lượt xem',
     iconType: 'terminal'
-  }
-];
-
-export const marketplaceData: MarketplaceItem[] = [
-  {
-    id: 'market-theme-cyber',
-    name: 'Cyberpunk Red Neon Theme',
-    description: 'Chủ đề màu sắc cực chất phong cách Neon Cyberpunk dành cho SN Terminal và VS Code.',
-    price: '99.000đ',
-    category: 'Themes',
-    categoryLabel: 'Giao diện',
-    rating: 4.9,
-    reviews: 142,
-    downloads: '1.8K',
-    seller: 'SN Design Team',
-    badge: 'Phổ biến',
-    iconType: 'palette'
-  },
-  {
-    id: 'market-plug-git',
-    name: 'Git Graph Lens Extension',
-    description: 'Tiện ích mở rộng vẽ cây thư mục Git trực quan trực tiếp trên SN Terminal với khả năng interactive merge.',
-    price: '149.000đ',
-    category: 'Plugins',
-    categoryLabel: 'Plugin mở rộng',
-    rating: 4.8,
-    reviews: 98,
-    downloads: '950',
-    seller: 'Hoàng Dev',
-    badge: 'Mới',
-    iconType: 'puzzle'
-  },
-  {
-    id: 'market-tool-db',
-    name: 'SQL DB Inspector Pro',
-    description: 'Bộ công cụ trực quan hóa cấu trúc cơ sở dữ liệu, tối ưu hóa câu lệnh SQL tự động bằng AI.',
-    price: '299.000đ',
-    category: 'Tools',
-    categoryLabel: 'Công cụ bổ trợ',
-    rating: 4.7,
-    reviews: 64,
-    downloads: '520',
-    seller: 'SN Studio',
-    badge: 'Đặc biệt',
-    iconType: 'wrench'
-  },
-  {
-    id: 'market-ext-translate',
-    name: 'AI Code Translator',
-    description: 'Dịch trực tiếp chú thích mã nguồn và chuyển đổi ngôn ngữ lập trình (ví dụ JS sang TS hoặc Python sang Go) bằng 1 click.',
-    price: '0đ',
-    category: 'Extensions',
-    categoryLabel: 'Tiện ích',
-    rating: 4.6,
-    reviews: 215,
-    downloads: '4.2K',
-    seller: 'Cộng đồng SN',
-    badge: 'Phổ biến',
-    iconType: 'plug'
   }
 ];
 
