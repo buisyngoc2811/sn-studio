@@ -27,6 +27,7 @@ export interface AppData {
 }
 
 export interface AppVersion {
+  id?: string;
   version: string;
   releaseDate: string;
   changelog: string;
@@ -45,7 +46,7 @@ type AppRow = {
   tags: string[] | null;
   created_at: string;
   categories: { name: string | null; slug: string | null } | null;
-  app_versions: { version_string: string; release_date: string; changelog: string | null }[] | null;
+  app_versions: { id: string; version_string: string; release_date: string; changelog: string | null }[] | null;
 };
 
 const categoryBySlug: Record<string, AppCategory> = {
@@ -131,6 +132,7 @@ const mapAppRow = (app: AppRow): AppData => {
     iconUrl: undefined,
     downloadPath: undefined,
     versions: versions.map(version => ({
+      id: version.id,
       version: version.version_string,
       releaseDate: new Date(version.release_date).toLocaleDateString('vi-VN'),
       changelog: version.changelog || '',
@@ -154,7 +156,7 @@ export const fetchApps = async (): Promise<AppData[]> => {
       tags,
       created_at,
       categories(name, slug),
-      app_versions(version_string, release_date, changelog)
+      app_versions(id, version_string, release_date, changelog)
     `);
 
   if (error) {
@@ -219,6 +221,27 @@ export const saveApp = async (app: AppData): Promise<AppData> => {
 
 export const deleteApp = async (id: string): Promise<void> => {
   const { error } = await supabase.from('apps').delete().eq('id', id);
+  if (error) throw error;
+};
+
+export const saveAppVersion = async (appId: string, version: AppVersion): Promise<void> => {
+  const payload = {
+    id: version.id,
+    app_id: appId,
+    version_string: version.version,
+    release_date: version.releaseDate ? new Date(version.releaseDate).toISOString() : new Date().toISOString(),
+    changelog: version.changelog || '',
+  };
+
+  const { error } = await supabase
+    .from('app_versions')
+    .upsert(payload, { onConflict: 'app_id,version_string' });
+
+  if (error) throw error;
+};
+
+export const deleteAppVersion = async (id: string): Promise<void> => {
+  const { error } = await supabase.from('app_versions').delete().eq('id', id);
   if (error) throw error;
 };
 

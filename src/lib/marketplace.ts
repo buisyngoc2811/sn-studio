@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-export type MarketplaceCategory = 'Themes' | 'Plugins' | 'Tools' | 'Extensions';
+export type MarketplaceCategory = string;
 export type MarketplaceIconType = 'palette' | 'puzzle' | 'wrench' | 'plug';
 export type MarketplaceBadge = 'Đặc biệt' | 'Phổ biến' | 'Mới' | '';
 
@@ -62,6 +62,13 @@ export interface MarketplaceResult {
   count: number;
 }
 
+export interface MarketplaceCategoryRow {
+  id: string;
+  name: string;
+  slug: string;
+  label: string;
+}
+
 type MarketplaceRow = {
   id: string;
   name: string;
@@ -103,6 +110,15 @@ const labelByCategory: Record<MarketplaceCategory, string> = {
   Extensions: 'Tiện ích',
 };
 
+const slugify = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'plugins';
+
 const formatDownloads = (count: number) => {
   if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
   if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
@@ -119,7 +135,7 @@ const parseDownloads = (downloads: string | number | undefined) => {
 
 const normalizeCategory = (slug: string | null): MarketplaceCategory => {
   if (slug && categoryBySlug[slug]) return categoryBySlug[slug];
-  return 'Plugins';
+  return slug || 'Plugins';
 };
 
 const normalizeIconType = (value: string | null): MarketplaceIconType => {
@@ -268,7 +284,7 @@ export const fetchMarketplaceItem = async (id: string): Promise<MarketplaceItem 
 };
 
 export const saveMarketplaceItem = async (item: MarketplaceItem): Promise<MarketplaceItem> => {
-  const categorySlug = slugByCategory[item.category] || item.category.toLowerCase();
+  const categorySlug = slugByCategory[item.category] || slugify(item.category);
   const { data: category, error: categoryError } = await supabase
     .from('marketplace_categories')
     .upsert(
@@ -330,6 +346,83 @@ export const deleteMarketplaceItem = async (id: string): Promise<void> => {
   if (error) throw error;
 };
 
+export const fetchMarketplaceCategories = async (): Promise<MarketplaceCategoryRow[]> => {
+  const { data, error } = await supabase
+    .from('marketplace_categories')
+    .select('id, name, slug, label')
+    .order('name', { ascending: true });
+
+  if (error) throw error;
+  return (data || []) as MarketplaceCategoryRow[];
+};
+
+export const saveMarketplaceCategory = async (
+  category: Partial<MarketplaceCategoryRow> & { name: string; label: string; slug?: string }
+): Promise<void> => {
+  const { error } = await supabase
+    .from('marketplace_categories')
+    .upsert(
+      {
+        id: category.id,
+        name: category.name,
+        slug: category.slug ? slugify(category.slug) : slugify(category.name),
+        label: category.label,
+      },
+      { onConflict: 'slug' }
+    );
+
+  if (error) throw error;
+};
+
+export const deleteMarketplaceCategory = async (id: string): Promise<void> => {
+  const { error } = await supabase.from('marketplace_categories').delete().eq('id', id);
+  if (error) throw error;
+};
+
+export const saveMarketplaceVersion = async (itemId: string, version: MarketplaceVersion): Promise<void> => {
+  const { error } = await supabase
+    .from('marketplace_versions')
+    .upsert(
+      {
+        id: version.id || undefined,
+        item_id: itemId,
+        version_string: version.version,
+        release_date: version.releaseDate ? new Date(version.releaseDate).toISOString() : new Date().toISOString(),
+        changelog: version.changelog || '',
+        file_path: version.filePath || null,
+      },
+      { onConflict: 'item_id,version_string' }
+    );
+
+  if (error) throw error;
+};
+
+export const deleteMarketplaceVersion = async (id: string): Promise<void> => {
+  const { error } = await supabase.from('marketplace_versions').delete().eq('id', id);
+  if (error) throw error;
+};
+
+export const updateMarketplaceReview = async (
+  id: string,
+  payload: { authorName: string; rating: number; comment: string }
+): Promise<void> => {
+  const { error } = await supabase
+    .from('marketplace_reviews')
+    .update({
+      author_name: payload.authorName,
+      rating: payload.rating,
+      comment: payload.comment,
+    })
+    .eq('id', id);
+
+  if (error) throw error;
+};
+
+export const deleteMarketplaceReview = async (id: string): Promise<void> => {
+  const { error } = await supabase.from('marketplace_reviews').delete().eq('id', id);
+  if (error) throw error;
+};
+
 export const incrementMarketplaceDownload = async (item: MarketplaceItem): Promise<MarketplaceItem> => {
   const nextDownloads = item.rawDownloads + 1;
   const { error } = await supabase
@@ -364,6 +457,16 @@ export const getMarketplaceDownloadUrl = async (item: MarketplaceItem): Promise<
 
   const { data } = await supabase.storage.from('app-files').getPublicUrl(path);
   return data.publicUrl;
+};
+
+export const uploadMarketplaceFile = async (bucket: 'app-icons' | 'app-files', folder: string, file: File): Promise<string> => {
+  const ext = file.name.includes('.') ? file.name.split('.').pop() : '';
+  const baseName = file.name.replace(/\.[^.]+$/, '');
+  const path = `${folder}/${Date.now()}-${slugify(baseName)}${ext ? `.${ext}` : ''}`;
+  const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
+
+  if (error) throw error;
+  return path;
 };
 
 export const fetchMarketplaceItemsByIds = async (ids: string[]): Promise<MarketplaceItem[]> => {

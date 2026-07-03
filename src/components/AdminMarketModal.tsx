@@ -2,19 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Save } from 'lucide-react';
-import { MarketplaceItem } from '../lib/marketplace';
+import { MarketplaceCategoryRow, MarketplaceItem, uploadMarketplaceFile } from '../lib/marketplace';
 
 interface AdminMarketModalProps {
   isOpen: boolean;
   onClose: () => void;
   item: MarketplaceItem | null;
   onSave: (item: MarketplaceItem) => void;
+  categories: MarketplaceCategoryRow[];
 }
 
-export const AdminMarketModal: React.FC<AdminMarketModalProps> = ({ isOpen, onClose, item, onSave }) => {
+export const AdminMarketModal: React.FC<AdminMarketModalProps> = ({ isOpen, onClose, item, onSave, categories }) => {
   const [formData, setFormData] = useState<Partial<MarketplaceItem>>({});
   const [tagsStr, setTagsStr] = useState('');
   const [screenshotsStr, setScreenshotsStr] = useState('');
+  const [isUploadingIcon, setIsUploadingIcon] = useState(false);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
 
   useEffect(() => {
     if (item) {
@@ -54,6 +57,27 @@ export const AdminMarketModal: React.FC<AdminMarketModalProps> = ({ isOpen, onCl
     } as MarketplaceItem;
     onSave(updatedItem);
     onClose();
+  };
+
+  const uploadFile = async (type: 'icon' | 'download', file?: File | null) => {
+    if (!file) return;
+    const safeName = (formData.name || 'marketplace-item').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    try {
+      if (type === 'icon') {
+        setIsUploadingIcon(true);
+        const path = await uploadMarketplaceFile('app-icons', `marketplace/${safeName || 'item'}`, file);
+        setFormData(prev => ({ ...prev, iconPath: path, cover: path }));
+      } else {
+        setIsUploadingFile(true);
+        const path = await uploadMarketplaceFile('app-files', `marketplace/${safeName || 'item'}`, file);
+        setFormData(prev => ({ ...prev, downloadPath: path }));
+      }
+    } catch (error: any) {
+      alert(`Không thể upload file: ${error.message}`);
+    } finally {
+      setIsUploadingIcon(false);
+      setIsUploadingFile(false);
+    }
   };
 
   const isFree = formData.price === '0đ' || formData.price === 'Miễn phí';
@@ -127,13 +151,24 @@ export const AdminMarketModal: React.FC<AdminMarketModalProps> = ({ isOpen, onCl
                   <label className="block text-xs font-bold text-zinc-400 mb-1">Danh mục ID</label>
                   <select
                     value={formData.category || 'Plugins'}
-                    onChange={e => setFormData({...formData, category: e.target.value as any})}
+                    onChange={e => {
+                      const selected = categories.find(category => category.name === e.target.value || category.slug === e.target.value);
+                      setFormData({
+                        ...formData,
+                        category: e.target.value as any,
+                        categoryLabel: selected?.label || formData.categoryLabel,
+                      });
+                    }}
                     className="w-full rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-accent"
                   >
-                    <option value="Themes">Themes</option>
-                    <option value="Plugins">Plugins</option>
-                    <option value="Tools">Tools</option>
-                    <option value="Extensions">Extensions</option>
+                    {(categories.length ? categories : [
+                      { id: 'themes', name: 'Themes', slug: 'themes', label: 'Giao diện' },
+                      { id: 'plugins', name: 'Plugins', slug: 'plugins', label: 'Plugin mở rộng' },
+                      { id: 'tools', name: 'Tools', slug: 'tools', label: 'Công cụ bổ trợ' },
+                      { id: 'extensions', name: 'Extensions', slug: 'extensions', label: 'Tiện ích' },
+                    ]).map(category => (
+                      <option key={category.id} value={category.name}>{category.name}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -209,10 +244,18 @@ export const AdminMarketModal: React.FC<AdminMarketModalProps> = ({ isOpen, onCl
                   <label className="block text-xs font-bold text-zinc-400 mb-1">Ảnh đại diện (Storage path hoặc URL)</label>
                   <input
                     type="text"
-                    value={formData.cover || ''}
-                    onChange={e => setFormData({...formData, cover: e.target.value})}
+                    value={formData.iconPath || formData.cover || ''}
+                    onChange={e => setFormData({...formData, iconPath: e.target.value, cover: e.target.value})}
                     className="w-full rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-accent"
                   />
+                  <input
+                    type="file"
+                    accept="image/*,.svg"
+                    disabled={isUploadingIcon}
+                    onChange={e => uploadFile('icon', e.target.files?.[0])}
+                    className="mt-2 block w-full text-[11px] text-zinc-400 file:mr-3 file:rounded file:border-0 file:bg-zinc-800 file:px-3 file:py-1.5 file:text-[11px] file:font-bold file:text-zinc-200 hover:file:bg-zinc-700"
+                  />
+                  {isUploadingIcon && <span className="text-[10px] text-zinc-500">Đang upload icon...</span>}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-zinc-400 mb-1">File tải xuống (Storage path)</label>
@@ -223,6 +266,13 @@ export const AdminMarketModal: React.FC<AdminMarketModalProps> = ({ isOpen, onCl
                     className="w-full rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-accent"
                     placeholder="marketplace/product/file.zip"
                   />
+                  <input
+                    type="file"
+                    disabled={isUploadingFile}
+                    onChange={e => uploadFile('download', e.target.files?.[0])}
+                    className="mt-2 block w-full text-[11px] text-zinc-400 file:mr-3 file:rounded file:border-0 file:bg-zinc-800 file:px-3 file:py-1.5 file:text-[11px] file:font-bold file:text-zinc-200 hover:file:bg-zinc-700"
+                  />
+                  {isUploadingFile && <span className="text-[10px] text-zinc-500">Đang upload file...</span>}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-zinc-400 mb-1">Phiên bản hiện tại</label>

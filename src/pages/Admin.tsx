@@ -12,19 +12,38 @@ import {
   Cpu,
   Users,
   Database,
-  Globe
+  Globe,
+  Star
 } from 'lucide-react';
 import { ArticleData, MemberData, membersData } from '../data/mockData';
 import { AdminAppModal } from '../components/AdminAppModal';
 import { AdminArticleModal } from '../components/AdminArticleModal';
 import { AdminMarketModal } from '../components/AdminMarketModal';
 import { AdminUserModal } from '../components/AdminUserModal';
-import { fetchApps, saveApp as saveSupabaseApp, deleteApp as deleteSupabaseApp, AppData } from '../lib/apps';
 import {
+  AppVersion,
+  fetchApps,
+  saveApp as saveSupabaseApp,
+  deleteApp as deleteSupabaseApp,
+  saveAppVersion,
+  deleteAppVersion,
+  AppData
+} from '../lib/apps';
+import {
+  deleteMarketplaceCategory,
   MarketplaceItem,
+  MarketplaceCategoryRow,
+  MarketplaceReview,
+  MarketplaceVersion,
+  deleteMarketplaceReview,
+  deleteMarketplaceVersion,
+  fetchMarketplaceCategories,
   fetchMarketplaceItems,
+  saveMarketplaceCategory,
   saveMarketplaceItem,
+  saveMarketplaceVersion,
   deleteMarketplaceItem,
+  updateMarketplaceReview,
 } from '../lib/marketplace';
 
 interface AdminProps {
@@ -60,7 +79,23 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
   const [apps, setApps] = useState<AppData[]>([]);
   const [articles, setArticles] = useState(articlesData);
   const [marketItems, setMarketItems] = useState<MarketplaceItem[]>([]);
+  const [marketCategories, setMarketCategories] = useState<MarketplaceCategoryRow[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
+  const [categoryDraft, setCategoryDraft] = useState<Partial<MarketplaceCategoryRow>>({ name: '', slug: '', label: '' });
+  const [appVersionDraft, setAppVersionDraft] = useState<{ appId: string; version: string; releaseDate: string; changelog: string }>({
+    appId: '',
+    version: '',
+    releaseDate: new Date().toISOString().slice(0, 10),
+    changelog: '',
+  });
+  const [marketVersionDraft, setMarketVersionDraft] = useState<{ itemId: string; version: string; releaseDate: string; changelog: string; filePath: string }>({
+    itemId: '',
+    version: '',
+    releaseDate: new Date().toISOString().slice(0, 10),
+    changelog: '',
+    filePath: '',
+  });
+  const [editingReview, setEditingReview] = useState<MarketplaceReview | null>(null);
 
   // System Settings State
   const [sysSettings, setSysSettings] = useState({
@@ -85,6 +120,7 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
       try {
         const result = await fetchMarketplaceItems({ page: 1, pageSize: 100, sortBy: 'newest' });
         setMarketItems(result.items);
+        setMarketCategories(await fetchMarketplaceCategories());
       } catch (error) {
         console.error('Error loading admin marketplace:', error);
         setMarketItems([]);
@@ -151,6 +187,42 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
     }
   };
 
+  const handleSaveAppVersion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!appVersionDraft.appId || !appVersionDraft.version.trim()) return;
+
+    try {
+      await saveAppVersion(appVersionDraft.appId, {
+        version: appVersionDraft.version.trim(),
+        releaseDate: appVersionDraft.releaseDate,
+        changelog: appVersionDraft.changelog.trim(),
+        rawDate: new Date(appVersionDraft.releaseDate).getTime(),
+      } as AppVersion);
+      setApps(await fetchApps());
+      setAppVersionDraft({
+        appId: appVersionDraft.appId,
+        version: '',
+        releaseDate: new Date().toISOString().slice(0, 10),
+        changelog: '',
+      });
+      window.dispatchEvent(new Event('apps-db-updated'));
+    } catch (error: any) {
+      alert(`Không thể lưu phiên bản ứng dụng: ${error.message}`);
+    }
+  };
+
+  const handleDeleteAppVersion = async (id?: string) => {
+    if (!id || !window.confirm('Xóa phiên bản ứng dụng này?')) return;
+
+    try {
+      await deleteAppVersion(id);
+      setApps(await fetchApps());
+      window.dispatchEvent(new Event('apps-db-updated'));
+    } catch (error: any) {
+      alert(`Không thể xóa phiên bản ứng dụng: ${error.message}`);
+    }
+  };
+
   const handleDeleteArticle = (id: string) => {
     if (window.confirm('Xóa bài viết này?')) {
       const newArticles = articles.filter(a => a.id !== id);
@@ -193,9 +265,111 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
       await saveMarketplaceItem(item);
       const result = await fetchMarketplaceItems({ page: 1, pageSize: 100, sortBy: 'newest' });
       setMarketItems(result.items);
+      setMarketCategories(await fetchMarketplaceCategories());
       window.dispatchEvent(new Event('market-db-updated'));
     } catch (error: any) {
       alert(`Không thể lưu sản phẩm: ${error.message}`);
+    }
+  };
+
+  const reloadMarketplaceCms = async () => {
+    const result = await fetchMarketplaceItems({ page: 1, pageSize: 100, sortBy: 'newest' });
+    setMarketItems(result.items);
+    setMarketCategories(await fetchMarketplaceCategories());
+    window.dispatchEvent(new Event('market-db-updated'));
+  };
+
+  const handleSaveMarketCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!categoryDraft.name?.trim() || !categoryDraft.label?.trim()) return;
+
+    try {
+      await saveMarketplaceCategory({
+        id: categoryDraft.id,
+        name: categoryDraft.name.trim(),
+        slug: categoryDraft.slug?.trim(),
+        label: categoryDraft.label.trim(),
+      });
+      setCategoryDraft({ name: '', slug: '', label: '' });
+      await reloadMarketplaceCms();
+    } catch (error: any) {
+      alert(`Không thể lưu danh mục: ${error.message}`);
+    }
+  };
+
+  const handleDeleteMarketCategory = async (id: string) => {
+    if (!window.confirm('Xóa danh mục này? Sản phẩm đang dùng danh mục sẽ chặn thao tác này.')) return;
+
+    try {
+      await deleteMarketplaceCategory(id);
+      await reloadMarketplaceCms();
+    } catch (error: any) {
+      alert(`Không thể xóa danh mục: ${error.message}`);
+    }
+  };
+
+  const handleSaveMarketVersion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!marketVersionDraft.itemId || !marketVersionDraft.version.trim()) return;
+
+    try {
+      await saveMarketplaceVersion(marketVersionDraft.itemId, {
+        id: '',
+        itemId: marketVersionDraft.itemId,
+        version: marketVersionDraft.version.trim(),
+        releaseDate: marketVersionDraft.releaseDate,
+        changelog: marketVersionDraft.changelog.trim(),
+        filePath: marketVersionDraft.filePath.trim(),
+      } as MarketplaceVersion);
+      setMarketVersionDraft({
+        itemId: marketVersionDraft.itemId,
+        version: '',
+        releaseDate: new Date().toISOString().slice(0, 10),
+        changelog: '',
+        filePath: '',
+      });
+      await reloadMarketplaceCms();
+    } catch (error: any) {
+      alert(`Không thể lưu phiên bản marketplace: ${error.message}`);
+    }
+  };
+
+  const handleDeleteMarketVersion = async (id: string) => {
+    if (!window.confirm('Xóa phiên bản marketplace này?')) return;
+
+    try {
+      await deleteMarketplaceVersion(id);
+      await reloadMarketplaceCms();
+    } catch (error: any) {
+      alert(`Không thể xóa phiên bản marketplace: ${error.message}`);
+    }
+  };
+
+  const handleSaveReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingReview) return;
+
+    try {
+      await updateMarketplaceReview(editingReview.id, {
+        authorName: editingReview.authorName,
+        rating: editingReview.rating,
+        comment: editingReview.comment,
+      });
+      setEditingReview(null);
+      await reloadMarketplaceCms();
+    } catch (error: any) {
+      alert(`Không thể lưu đánh giá: ${error.message}`);
+    }
+  };
+
+  const handleDeleteReview = async (id: string) => {
+    if (!window.confirm('Xóa đánh giá này?')) return;
+
+    try {
+      await deleteMarketplaceReview(id);
+      await reloadMarketplaceCms();
+    } catch (error: any) {
+      alert(`Không thể xóa đánh giá: ${error.message}`);
     }
   };
 
@@ -298,6 +472,17 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
     return new Intl.NumberFormat('vi-VN').format(total) + 'đ';
   };
 
+  const totalDownloads = [...apps, ...marketItems].reduce((sum, item) => sum + (item.rawDownloads || 0), 0);
+  const totalReviews = marketItems.reduce((sum, item) => sum + item.reviews, 0);
+  const mockRevenue = calculateRevenue() === '0đ'
+    ? `${new Intl.NumberFormat('vi-VN').format(
+        marketItems.reduce((sum, item) => {
+          if (item.price === '0đ' || item.price === 'Miễn phí') return sum;
+          return sum + ((parseInt(item.price.replace(/[^\d]/g, ''), 10) || 0) * Math.max(1, item.reviews));
+        }, 0)
+      )}đ`
+    : calculateRevenue();
+
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
       <div className="mb-8 flex items-center justify-between">
@@ -358,10 +543,10 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
                 {/* Stats Grid */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                   {[
-                    { label: 'Tổng người dùng', value: members.length, suffix: 'Thành viên', color: 'text-brand-400' },
-                    { label: 'Số lượng ứng dụng', value: apps.length, suffix: 'Apps', color: 'text-blue-400' },
-                    { label: 'Tổng đơn hàng', value: purchases.length, suffix: 'Orders', color: 'text-orange-400' },
-                    { label: 'Tổng doanh thu', value: calculateRevenue(), suffix: '', color: 'text-rose-400' }
+                    { label: 'Tổng ứng dụng', value: apps.length, suffix: 'Apps', color: 'text-blue-400' },
+                    { label: 'Tổng lượt tải', value: totalDownloads.toLocaleString('vi-VN'), suffix: 'Downloads', color: 'text-brand-400' },
+                    { label: 'Tổng đánh giá', value: totalReviews, suffix: 'Reviews', color: 'text-orange-400' },
+                    { label: 'Doanh thu mô phỏng', value: mockRevenue, suffix: '', color: 'text-rose-400' }
                   ].map((stat, i) => (
                     <div key={i} className="rounded-xl border border-zinc-800 bg-zinc-950 p-5 shadow-glass relative overflow-hidden group">
                       <div className="absolute inset-0 bg-gradient-to-br from-zinc-800/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
@@ -689,6 +874,57 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
                     </div>
                   ))}
                 </div>
+
+                <div className="mt-8 border-t border-zinc-800 pt-6">
+                  <div className="mb-4">
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider">Quản lý phiên bản ứng dụng</h4>
+                    <p className="text-[11px] text-zinc-500 mt-1">Thêm hoặc xóa lịch sử phiên bản cho từng app.</p>
+                  </div>
+
+                  <form onSubmit={handleSaveAppVersion} className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
+                    <select
+                      required
+                      value={appVersionDraft.appId}
+                      onChange={e => setAppVersionDraft({ ...appVersionDraft, appId: e.target.value })}
+                      className="rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent md:col-span-2"
+                    >
+                      <option value="">Chọn ứng dụng</option>
+                      {apps.map(app => <option key={app.id} value={app.id}>{app.name}</option>)}
+                    </select>
+                    <input
+                      required
+                      value={appVersionDraft.version}
+                      onChange={e => setAppVersionDraft({ ...appVersionDraft, version: e.target.value })}
+                      placeholder="v1.0.0"
+                      className="rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent"
+                    />
+                    <input
+                      type="date"
+                      value={appVersionDraft.releaseDate}
+                      onChange={e => setAppVersionDraft({ ...appVersionDraft, releaseDate: e.target.value })}
+                      className="rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent"
+                    />
+                    <button className="rounded bg-brand-accent px-3 py-2 text-xs font-bold text-white hover:bg-brand-600 transition-colors">Lưu phiên bản</button>
+                    <input
+                      value={appVersionDraft.changelog}
+                      onChange={e => setAppVersionDraft({ ...appVersionDraft, changelog: e.target.value })}
+                      placeholder="Changelog"
+                      className="rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent md:col-span-5"
+                    />
+                  </form>
+
+                  <div className="space-y-2">
+                    {apps.flatMap(app => (app.versions || []).map(version => ({ app, version }))).map(({ app, version }) => (
+                      <div key={`${app.id}-${version.id || version.version}`} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/30 px-3 py-2">
+                        <div>
+                          <p className="text-xs font-bold text-zinc-200">{app.name} <span className="text-brand-400">{version.version}</span></p>
+                          <p className="text-[10px] text-zinc-500">{version.releaseDate} • {version.changelog || 'Không có changelog'}</p>
+                        </div>
+                        <button onClick={() => handleDeleteAppVersion(version.id)} className="px-2 py-1 text-[10px] font-semibold text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded transition-colors">Xóa</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </motion.div>
             )}
 
@@ -793,6 +1029,157 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
                       </div>
                     </div>
                   ))}
+                </div>
+
+                <div className="mt-8 grid grid-cols-1 xl:grid-cols-2 gap-6 border-t border-zinc-800 pt-6">
+                  <div>
+                    <div className="mb-4">
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">Danh mục Marketplace</h4>
+                      <p className="text-[11px] text-zinc-500 mt-1">Tạo, chỉnh sửa hoặc xóa danh mục sản phẩm.</p>
+                    </div>
+
+                    <form onSubmit={handleSaveMarketCategory} className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+                      <input
+                        required
+                        value={categoryDraft.name || ''}
+                        onChange={e => setCategoryDraft({ ...categoryDraft, name: e.target.value })}
+                        placeholder="Name"
+                        className="rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent"
+                      />
+                      <input
+                        value={categoryDraft.slug || ''}
+                        onChange={e => setCategoryDraft({ ...categoryDraft, slug: e.target.value })}
+                        placeholder="slug"
+                        className="rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent"
+                      />
+                      <input
+                        required
+                        value={categoryDraft.label || ''}
+                        onChange={e => setCategoryDraft({ ...categoryDraft, label: e.target.value })}
+                        placeholder="Tên hiển thị"
+                        className="rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent"
+                      />
+                      <button className="rounded bg-brand-accent px-3 py-2 text-xs font-bold text-white hover:bg-brand-600 transition-colors">Lưu</button>
+                    </form>
+
+                    <div className="space-y-2">
+                      {marketCategories.map(category => (
+                        <div key={category.id} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/30 px-3 py-2">
+                          <div>
+                            <p className="text-xs font-bold text-zinc-200">{category.label}</p>
+                            <p className="text-[10px] text-zinc-500">{category.name} • {category.slug}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={() => setCategoryDraft(category)} className="px-2 py-1 text-[10px] font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors">Sửa</button>
+                            <button onClick={() => handleDeleteMarketCategory(category.id)} className="px-2 py-1 text-[10px] font-semibold text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded transition-colors">Xóa</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="mb-4">
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">Phiên bản Marketplace</h4>
+                      <p className="text-[11px] text-zinc-500 mt-1">Quản lý file phát hành và changelog.</p>
+                    </div>
+
+                    <form onSubmit={handleSaveMarketVersion} className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+                      <select
+                        required
+                        value={marketVersionDraft.itemId}
+                        onChange={e => setMarketVersionDraft({ ...marketVersionDraft, itemId: e.target.value })}
+                        className="rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent md:col-span-2"
+                      >
+                        <option value="">Chọn sản phẩm</option>
+                        {marketItems.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                      </select>
+                      <input
+                        required
+                        value={marketVersionDraft.version}
+                        onChange={e => setMarketVersionDraft({ ...marketVersionDraft, version: e.target.value })}
+                        placeholder="v1.0.0"
+                        className="rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent"
+                      />
+                      <input
+                        type="date"
+                        value={marketVersionDraft.releaseDate}
+                        onChange={e => setMarketVersionDraft({ ...marketVersionDraft, releaseDate: e.target.value })}
+                        className="rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent"
+                      />
+                      <input
+                        value={marketVersionDraft.filePath}
+                        onChange={e => setMarketVersionDraft({ ...marketVersionDraft, filePath: e.target.value })}
+                        placeholder="app-files path"
+                        className="rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent md:col-span-2"
+                      />
+                      <input
+                        value={marketVersionDraft.changelog}
+                        onChange={e => setMarketVersionDraft({ ...marketVersionDraft, changelog: e.target.value })}
+                        placeholder="Changelog"
+                        className="rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent"
+                      />
+                      <button className="rounded bg-brand-accent px-3 py-2 text-xs font-bold text-white hover:bg-brand-600 transition-colors">Lưu phiên bản</button>
+                    </form>
+
+                    <div className="space-y-2">
+                      {marketItems.flatMap(item => (item.versions || []).map(version => ({ item, version }))).map(({ item, version }) => (
+                        <div key={version.id} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/30 px-3 py-2">
+                          <div>
+                            <p className="text-xs font-bold text-zinc-200">{item.name} <span className="text-brand-400">{version.version}</span></p>
+                            <p className="text-[10px] text-zinc-500">{version.releaseDate} • {version.filePath || 'Chưa có file'}</p>
+                          </div>
+                          <button onClick={() => handleDeleteMarketVersion(version.id)} className="px-2 py-1 text-[10px] font-semibold text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded transition-colors">Xóa</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8 border-t border-zinc-800 pt-6">
+                  <div className="mb-4 flex items-center gap-2">
+                    <Star size={14} className="text-amber-400" />
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider">Quản lý đánh giá</h4>
+                  </div>
+
+                  {editingReview && (
+                    <form onSubmit={handleSaveReview} className="grid grid-cols-1 md:grid-cols-6 gap-3 mb-4 rounded-lg border border-zinc-800 bg-zinc-900/30 p-3">
+                      <input
+                        value={editingReview.authorName}
+                        onChange={e => setEditingReview({ ...editingReview, authorName: e.target.value })}
+                        className="rounded bg-zinc-950 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent"
+                      />
+                      <input
+                        type="number"
+                        min="1"
+                        max="5"
+                        value={editingReview.rating}
+                        onChange={e => setEditingReview({ ...editingReview, rating: parseInt(e.target.value, 10) || 1 })}
+                        className="rounded bg-zinc-950 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent"
+                      />
+                      <input
+                        value={editingReview.comment}
+                        onChange={e => setEditingReview({ ...editingReview, comment: e.target.value })}
+                        className="rounded bg-zinc-950 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent md:col-span-3"
+                      />
+                      <button className="rounded bg-brand-accent px-3 py-2 text-xs font-bold text-white hover:bg-brand-600 transition-colors">Lưu</button>
+                    </form>
+                  )}
+
+                  <div className="space-y-2">
+                    {marketItems.flatMap(item => (item.reviewItems || []).map(review => ({ item, review }))).map(({ item, review }) => (
+                      <div key={review.id} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/30 px-3 py-2">
+                        <div>
+                          <p className="text-xs font-bold text-zinc-200">{review.authorName} <span className="text-amber-400">{review.rating}★</span></p>
+                          <p className="text-[10px] text-zinc-500">{item.name} • {review.comment}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => setEditingReview(review)} className="px-2 py-1 text-[10px] font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors">Sửa</button>
+                          <button onClick={() => handleDeleteReview(review.id)} className="px-2 py-1 text-[10px] font-semibold text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded transition-colors">Xóa</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -942,6 +1329,7 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
         onClose={() => setIsMarketModalOpen(false)}
         item={editingMarket}
         onSave={handleSaveMarket}
+        categories={marketCategories}
       />
 
       <AdminUserModal
