@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ShoppingCart, Star, Palette, Puzzle, Wrench, Plug, CheckCircle, Download, FileText } from 'lucide-react';
+import { X, ShoppingCart, Star, Palette, Puzzle, Wrench, Plug, CheckCircle, Download, FileText, Key, Copy } from 'lucide-react';
 import {
   MarketplaceItem,
   addMarketplaceReview,
-  getMarketplaceDownloadUrl,
-  incrementMarketplaceDownload,
 } from '../lib/marketplace';
+import {
+  MarketplacePurchaseActionResult,
+  downloadMarketplaceItem,
+  fetchMarketplacePurchaseByItemId,
+  purchaseMarketplaceItem,
+} from '../lib/commerce';
 
 interface MarketplaceItemModalProps {
   item: MarketplaceItem;
@@ -32,6 +36,7 @@ export const MarketplaceItemModal: React.FC<MarketplaceItemModalProps> = ({
   const [reviewComment, setReviewComment] = useState('');
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [purchaseNotice, setPurchaseNotice] = useState<MarketplacePurchaseActionResult | null>(null);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -43,21 +48,36 @@ export const MarketplaceItemModal: React.FC<MarketplaceItemModalProps> = ({
     const handleUpdate = () => {
       const cart = JSON.parse(localStorage.getItem('sn_cart') || '[]');
       setIsInCart(cart.some((cartItem: any) => (typeof cartItem === 'string' ? cartItem : cartItem.id) === item.id));
-      const purchases = JSON.parse(localStorage.getItem('sn_purchases') || '[]');
-      setIsPurchased(purchases.some((purchase: any) => purchase.id === item.id || purchase.item_id === item.id));
     };
 
-    handleUpdate();
+    const loadPurchase = async () => {
+      handleUpdate();
+      try {
+        const purchase = await fetchMarketplacePurchaseByItemId(item.id);
+        setIsPurchased(!!purchase);
+      } catch (error) {
+        console.error('Error loading marketplace purchase state:', error);
+      }
+    };
+
+    loadPurchase();
     window.addEventListener('cart-updated', handleUpdate);
+    window.addEventListener('commerce-db-updated', loadPurchase);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('cart-updated', handleUpdate);
+      window.removeEventListener('commerce-db-updated', loadPurchase);
       document.body.style.overflow = 'auto';
     };
   }, [item, onClose]);
 
   const handleAddToCart = () => {
+    if (!isLoggedIn) {
+      alert('Vui lòng đăng nhập để tiếp tục.');
+      setRoute('login');
+      return;
+    }
     if (isInCart || isPurchased) return;
     const cart = JSON.parse(localStorage.getItem('sn_cart') || '[]');
     cart.push(item.id);
@@ -68,12 +88,32 @@ export const MarketplaceItemModal: React.FC<MarketplaceItemModalProps> = ({
   };
 
   const handleDownload = async () => {
+    if (!isLoggedIn) {
+      alert('Vui lòng đăng nhập để tiếp tục.');
+      setRoute('login');
+      return;
+    }
     setIsDownloading(true);
     try {
-      const updatedItem = await incrementMarketplaceDownload(item);
-      onItemUpdated(updatedItem);
-      const url = await getMarketplaceDownloadUrl(updatedItem);
+      const isFree = item.price === '0đ' || item.price === 'Miễn phí';
+      let purchaseResult: MarketplacePurchaseActionResult | null = null;
+
+      if (!isPurchased) {
+        if (!isFree) {
+          alert('Vui lòng mua sản phẩm trước khi tải xuống.');
+          return;
+        }
+        purchaseResult = await purchaseMarketplaceItem(item.id);
+        setIsPurchased(true);
+        setPurchaseNotice(purchaseResult);
+        window.dispatchEvent(new Event('commerce-db-updated'));
+      }
+
+      const downloadResult = await downloadMarketplaceItem(item.id, item.versions?.[0]?.id);
+      const url = downloadResult.downloadUrl;
       if (url) window.open(url, '_blank', 'noopener,noreferrer');
+      if (purchaseResult?.licenseKey) setPurchaseNotice(purchaseResult);
+      window.dispatchEvent(new Event('market-db-updated'));
     } catch (error: any) {
       alert(`Không thể tải xuống: ${error.message}`);
     } finally {
@@ -202,6 +242,27 @@ export const MarketplaceItemModal: React.FC<MarketplaceItemModalProps> = ({
                     )}
                   </div>
                 </div>
+                {purchaseNotice?.licenseKey && (
+                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wider text-emerald-300 flex items-center gap-1">
+                          <Key size={11} />
+                          License Key
+                        </p>
+                        <code className="mt-1 block break-all font-mono text-sm text-emerald-50">{purchaseNotice.licenseKey}</code>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(purchaseNotice.licenseKey || '')}
+                        className="shrink-0 rounded-md border border-emerald-500/20 bg-emerald-500/15 p-2 text-emerald-100 hover:bg-emerald-500/25"
+                        title="Copy"
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

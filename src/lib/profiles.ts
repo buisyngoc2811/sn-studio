@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-export type ProfileStatus = 'Active' | 'Banned';
+export type ProfileStatus = 'active' | 'banned';
 
 export interface ProfileRow {
   id: string;
@@ -11,6 +11,8 @@ export interface ProfileRow {
   avatar_url: string | null;
   status: ProfileStatus;
 }
+
+type AdminProfileAction = 'upsert' | 'delete' | 'suspend';
 
 const baseProfileSelect = 'id, username, display_name, email, role, avatar_url';
 const profileSelectWithStatus = `${baseProfileSelect}, status`;
@@ -25,7 +27,7 @@ const normalizeProfile = (profile: Partial<ProfileRow>): ProfileRow => ({
   email: profile.email || '',
   role: profile.role || 'user',
   avatar_url: profile.avatar_url || '',
-  status: profile.status || 'Active',
+  status: profile.status?.toLowerCase() === 'banned' ? 'banned' : 'active',
 });
 
 export const fetchProfiles = async (): Promise<ProfileRow[]> => {
@@ -46,35 +48,57 @@ export const fetchProfiles = async (): Promise<ProfileRow[]> => {
   return ((withoutStatus.data || []) as Partial<ProfileRow>[]).map(normalizeProfile);
 };
 
+export const fetchProfileById = async (id: string): Promise<ProfileRow | null> => {
+  const withStatus = await supabase
+    .from('profiles')
+    .select(profileSelectWithStatus)
+    .eq('id', id)
+    .maybeSingle();
+
+  if (!withStatus.error && withStatus.data) return normalizeProfile(withStatus.data as Partial<ProfileRow>);
+  if (!isMissingStatusColumn(withStatus.error)) {
+    if (withStatus.error) throw withStatus.error;
+    return null;
+  }
+
+  const withoutStatus = await supabase
+    .from('profiles')
+    .select(baseProfileSelect)
+    .eq('id', id)
+    .maybeSingle();
+
+  if (withoutStatus.error) throw withoutStatus.error;
+  return withoutStatus.data ? normalizeProfile(withoutStatus.data as Partial<ProfileRow>) : null;
+};
+
 export const saveProfile = async (profile: ProfileRow): Promise<void> => {
-  const payload = {
-    id: profile.id,
+  const { error } = await supabase.rpc('admin_manage_profile', {
+    action: 'upsert' satisfies AdminProfileAction,
+    profile_id: profile.id,
     username: profile.username,
     display_name: profile.display_name,
     email: profile.email,
     role: profile.role || 'user',
+    status: profile.status || 'active',
     avatar_url: profile.avatar_url || '',
-    status: profile.status || 'Active',
-  };
-  const withStatus = await supabase
-    .from('profiles')
-    .upsert(payload);
+  });
 
-  if (!withStatus.error) return;
-  if (!isMissingStatusColumn(withStatus.error)) throw withStatus.error;
-
-  const { status, ...payloadWithoutStatus } = payload;
-  const withoutStatus = await supabase.from('profiles').upsert(payloadWithoutStatus);
-  if (withoutStatus.error) throw withoutStatus.error;
+  if (error) throw error;
 };
 
 export const deleteProfile = async (id: string): Promise<void> => {
-  const { error } = await supabase.from('profiles').delete().eq('id', id);
+  const { error } = await supabase.rpc('admin_manage_profile', {
+    action: 'delete' satisfies AdminProfileAction,
+    profile_id: id,
+  });
   if (error) throw error;
 };
 
 export const updateProfileStatus = async (id: string, status: ProfileStatus): Promise<void> => {
-  const { error } = await supabase.from('profiles').update({ status }).eq('id', id);
-  if (isMissingStatusColumn(error)) return;
+  const { error } = await supabase.rpc('admin_manage_profile', {
+    action: 'suspend' satisfies AdminProfileAction,
+    profile_id: id,
+    status,
+  });
   if (error) throw error;
 };

@@ -13,7 +13,10 @@ import {
   Users,
   Database,
   Globe,
-  Star
+  Star,
+  CheckCircle2,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { ArticleData } from '../data/mockData';
 import { AdminAppModal } from '../components/AdminAppModal';
@@ -40,12 +43,22 @@ import {
   deleteMarketplaceVersion,
   fetchMarketplaceCategories,
   fetchMarketplaceItems,
+  uploadMarketplaceFile,
   saveMarketplaceCategory,
   saveMarketplaceItem,
   saveMarketplaceVersion,
   deleteMarketplaceItem,
   updateMarketplaceReview,
 } from '../lib/marketplace';
+import {
+  MarketplaceDownloadLogRecord,
+  MarketplacePurchaseRecord,
+  adminManageMarketplacePurchase,
+  fetchMarketplaceDownloadLogs,
+  fetchMarketplacePurchases,
+  formatFileSize,
+  maskLicenseKey,
+} from '../lib/commerce';
 
 interface AdminProps {
   username: string;
@@ -53,9 +66,11 @@ interface AdminProps {
 }
 
 type AdminTab = 'overview' | 'users' | 'apps' | 'articles' | 'marketplace' | 'settings';
+type ToastType = 'success' | 'error';
 
 export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  const [toast, setToast] = useState<{ id: number; type: ToastType; message: string } | null>(null);
 
   // App Modal States
   const [isAppModalOpen, setIsAppModalOpen] = useState(false);
@@ -80,7 +95,8 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
   const [articles, setArticles] = useState(articlesData);
   const [marketItems, setMarketItems] = useState<MarketplaceItem[]>([]);
   const [marketCategories, setMarketCategories] = useState<MarketplaceCategoryRow[]>([]);
-  const [purchases, setPurchases] = useState<any[]>([]);
+  const [commercePurchases, setCommercePurchases] = useState<MarketplacePurchaseRecord[]>([]);
+  const [commerceDownloads, setCommerceDownloads] = useState<MarketplaceDownloadLogRecord[]>([]);
   const [categoryDraft, setCategoryDraft] = useState<Partial<MarketplaceCategoryRow>>({ name: '', slug: '', label: '' });
   const [appVersionDraft, setAppVersionDraft] = useState<{ appId: string; version: string; releaseDate: string; changelog: string }>({
     appId: '',
@@ -88,12 +104,13 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
     releaseDate: new Date().toISOString().slice(0, 10),
     changelog: '',
   });
-  const [marketVersionDraft, setMarketVersionDraft] = useState<{ itemId: string; version: string; releaseDate: string; changelog: string; filePath: string }>({
+  const [marketVersionDraft, setMarketVersionDraft] = useState<{ itemId: string; version: string; releaseDate: string; changelog: string; filePath: string; fileSize: number }>({
     itemId: '',
     version: '',
     releaseDate: new Date().toISOString().slice(0, 10),
     changelog: '',
     filePath: '',
+    fileSize: 0,
   });
   const [editingReview, setEditingReview] = useState<MarketplaceReview | null>(null);
 
@@ -134,28 +151,45 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
         setProfiles([]);
       }
     };
+    const loadCommerce = async () => {
+      try {
+        setCommercePurchases(await fetchMarketplacePurchases());
+        setCommerceDownloads(await fetchMarketplaceDownloadLogs());
+      } catch (error) {
+        console.error('Error loading admin commerce:', error);
+        setCommercePurchases([]);
+        setCommerceDownloads([]);
+      }
+    };
 
     loadApps();
     loadMarketItems();
     loadProfiles();
+    loadCommerce();
 
     // Load Settings
     const settingsStr = localStorage.getItem('sn_settings');
     if (settingsStr) setSysSettings(JSON.parse(settingsStr));
 
-    // Load Purchases
-    const purchasesStr = localStorage.getItem('sn_purchases');
-    if (purchasesStr) setPurchases(JSON.parse(purchasesStr));
-
     window.addEventListener('apps-db-updated', loadApps);
     window.addEventListener('market-db-updated', loadMarketItems);
     window.addEventListener('profiles-db-updated', loadProfiles);
+    window.addEventListener('commerce-db-updated', loadCommerce);
     return () => {
       window.removeEventListener('apps-db-updated', loadApps);
       window.removeEventListener('market-db-updated', loadMarketItems);
       window.removeEventListener('profiles-db-updated', loadProfiles);
+      window.removeEventListener('commerce-db-updated', loadCommerce);
     };
   }, []);
+
+  const showToast = (type: ToastType, message: string) => {
+    const id = Date.now();
+    setToast({ id, type, message });
+    window.setTimeout(() => {
+      setToast(current => (current?.id === id ? null : current));
+    }, 3200);
+  };
 
   const handleDeleteApp = async (id: string) => {
     if (window.confirm('Xóa ứng dụng này?')) {
@@ -300,6 +334,26 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
     }
   };
 
+  const handleUploadMarketVersionFile = async (file?: File | null) => {
+    if (!file) return;
+    const selectedItem = marketItems.find(item => item.id === marketVersionDraft.itemId);
+    const safeName = (selectedItem?.name || marketVersionDraft.version || 'marketplace-version')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+    try {
+      const path = await uploadMarketplaceFile('app-files', `marketplace/${safeName || 'version'}`, file);
+      setMarketVersionDraft(prev => ({
+        ...prev,
+        filePath: path,
+        fileSize: file.size,
+      }));
+    } catch (error: any) {
+      alert(`Không thể upload file phiên bản: ${error.message}`);
+    }
+  };
+
   const handleSaveMarketVersion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!marketVersionDraft.itemId || !marketVersionDraft.version.trim()) return;
@@ -312,6 +366,7 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
         releaseDate: marketVersionDraft.releaseDate,
         changelog: marketVersionDraft.changelog.trim(),
         filePath: marketVersionDraft.filePath.trim(),
+        fileSize: marketVersionDraft.fileSize,
       } as MarketplaceVersion);
       setMarketVersionDraft({
         itemId: marketVersionDraft.itemId,
@@ -319,6 +374,7 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
         releaseDate: new Date().toISOString().slice(0, 10),
         changelog: '',
         filePath: '',
+        fileSize: 0,
       });
       await reloadMarketplaceCms();
     } catch (error: any) {
@@ -365,15 +421,44 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
     }
   };
 
+  const handleRefundPurchase = async (purchaseId: string) => {
+    if (!window.confirm('Đánh dấu giao dịch này là refunded?')) return;
+    try {
+      await adminManageMarketplacePurchase(purchaseId, { purchaseStatus: 'refunded' });
+      await reloadCommerce();
+      showToast('success', 'Đã đánh dấu giao dịch là refunded.');
+    } catch (error: any) {
+      showToast('error', `Không thể cập nhật giao dịch: ${error.message}`);
+    }
+  };
+
+  const handleRevokeLicense = async (purchaseId: string) => {
+    if (!window.confirm('Thu hồi license của giao dịch này?')) return;
+    try {
+      await adminManageMarketplacePurchase(purchaseId, { licenseStatus: 'revoked' });
+      await reloadCommerce();
+      showToast('success', 'Đã thu hồi license.');
+    } catch (error: any) {
+      showToast('error', `Không thể thu hồi license: ${error.message}`);
+    }
+  };
+
   const reloadProfiles = async () => {
-    setProfiles(await fetchProfiles());
+    const nextProfiles = await fetchProfiles();
+    setProfiles(nextProfiles);
     window.dispatchEvent(new Event('profiles-db-updated'));
+  };
+
+  const reloadCommerce = async () => {
+    setCommercePurchases(await fetchMarketplacePurchases());
+    setCommerceDownloads(await fetchMarketplaceDownloadLogs());
+    window.dispatchEvent(new Event('commerce-db-updated'));
   };
 
   const handleDeleteMember = async (id: string) => {
     const profile = profiles.find(item => item.id === id);
     if (profile?.email === 'admin@gmail.com' || profile?.email === 'admin@snstudio.vn') {
-      alert('Không thể xóa tài khoản Quản trị viên tối cao!');
+      showToast('error', 'Không thể xóa tài khoản Quản trị viên tối cao!');
       return;
     }
     if (!window.confirm('Xóa hồ sơ người dùng này khỏi Supabase?')) return;
@@ -381,8 +466,9 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
     try {
       await deleteProfile(id);
       await reloadProfiles();
+      showToast('success', 'Đã xóa hồ sơ người dùng.');
     } catch (error: any) {
-      alert(`Không thể xóa hồ sơ: ${error.message}`);
+      showToast('error', `Không thể xóa hồ sơ: ${error.message}`);
     }
   };
 
@@ -390,17 +476,20 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
     try {
       await saveProfile(profile);
       await reloadProfiles();
+      showToast('success', 'Đã lưu hồ sơ người dùng.');
     } catch (error: any) {
-      alert(`Không thể lưu hồ sơ: ${error.message}`);
+      showToast('error', `Không thể lưu hồ sơ: ${error.message}`);
+      throw error;
     }
   };
 
   const handleToggleBan = async (profile: ProfileRow) => {
     try {
-      await updateProfileStatus(profile.id, profile.status === 'Banned' ? 'Active' : 'Banned');
+      await updateProfileStatus(profile.id, profile.status === 'banned' ? 'active' : 'banned');
       await reloadProfiles();
+      showToast('success', `Đã cập nhật trạng thái thành ${profile.status === 'banned' ? 'active' : 'banned'}.`);
     } catch (error: any) {
-      alert(`Không thể cập nhật trạng thái: ${error.message}`);
+      showToast('error', `Không thể cập nhật trạng thái: ${error.message}`);
     }
   };
 
@@ -456,25 +545,19 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
     alert(`Chức năng [${action}] đã được ghi nhận vào nhật ký hệ thống.`);
   };
 
-  const calculateRevenue = () => {
-    const total = purchases.reduce((sum, item) => {
-      if (item.price === '0đ' || item.price === 'Miễn phí') return sum;
-      const num = parseInt(item.price.replace(/[^\d]/g, ''));
-      return sum + (isNaN(num) ? 0 : num);
-    }, 0);
-    return new Intl.NumberFormat('vi-VN').format(total) + 'đ';
+  const parseCurrency = (value: string) => {
+    const numeric = parseInt((value || '').replace(/[^\d]/g, ''), 10);
+    return Number.isNaN(numeric) ? 0 : numeric;
   };
 
   const totalDownloads = [...apps, ...marketItems].reduce((sum, item) => sum + (item.rawDownloads || 0), 0);
   const totalReviews = marketItems.reduce((sum, item) => sum + item.reviews, 0);
-  const mockRevenue = calculateRevenue() === '0đ'
-    ? `${new Intl.NumberFormat('vi-VN').format(
-        marketItems.reduce((sum, item) => {
-          if (item.price === '0đ' || item.price === 'Miễn phí') return sum;
-          return sum + ((parseInt(item.price.replace(/[^\d]/g, ''), 10) || 0) * Math.max(1, item.reviews));
-        }, 0)
-      )}đ`
-    : calculateRevenue();
+  const totalCommerceRevenue = commercePurchases.reduce((sum, purchase) => {
+    if (!['completed', 'claimed'].includes(purchase.status)) return sum;
+    return sum + parseCurrency(purchase.itemPrice);
+  }, 0);
+  const activeCommerceLicenses = commercePurchases.filter(purchase => purchase.licenseStatus === 'active').length;
+  const mockRevenue = `${new Intl.NumberFormat('vi-VN').format(totalCommerceRevenue)}đ`;
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
@@ -783,7 +866,7 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
                             <div className="text-[10px] text-brand-400 font-semibold mt-0.5">{profile.id}</div>
                           </td>
                           <td className="px-4 py-3">
-                            {profile.status === 'Banned' ? (
+                            {profile.status === 'banned' ? (
                               <span className="px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-bold tracking-wider">BANNED</span>
                             ) : (
                               <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold tracking-wider">ACTIVE</span>
@@ -793,9 +876,9 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
                             <div className="flex justify-end gap-1.5">
                               <button 
                                 onClick={() => handleToggleBan(profile)}
-                                className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${profile.status === 'Banned' ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20' : 'bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'}`}
+                                className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${profile.status === 'banned' ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20' : 'bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'}`}
                               >
-                                {profile.status === 'Banned' ? 'Mở Khóa' : 'Đình Chỉ'}
+                                {profile.status === 'banned' ? 'Mở Khóa' : 'Đình Chỉ'}
                               </button>
                               <button 
                                 onClick={() => {
@@ -1114,6 +1197,16 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
                         placeholder="app-files path"
                         className="rounded bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-accent md:col-span-2"
                       />
+                      <div className="md:col-span-2">
+                        <input
+                          type="file"
+                          onChange={e => handleUploadMarketVersionFile(e.target.files?.[0])}
+                          className="block w-full text-[11px] text-zinc-400 file:mr-3 file:rounded file:border-0 file:bg-zinc-800 file:px-3 file:py-1.5 file:text-[11px] file:font-bold file:text-zinc-200 hover:file:bg-zinc-700"
+                        />
+                        <p className="mt-1 text-[10px] text-zinc-500">
+                          File size: {formatFileSize(marketVersionDraft.fileSize)}
+                        </p>
+                      </div>
                       <input
                         value={marketVersionDraft.changelog}
                         onChange={e => setMarketVersionDraft({ ...marketVersionDraft, changelog: e.target.value })}
@@ -1128,7 +1221,7 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
                         <div key={version.id} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/30 px-3 py-2">
                           <div>
                             <p className="text-xs font-bold text-zinc-200">{item.name} <span className="text-brand-400">{version.version}</span></p>
-                            <p className="text-[10px] text-zinc-500">{version.releaseDate} • {version.filePath || 'Chưa có file'}</p>
+                            <p className="text-[10px] text-zinc-500">{version.releaseDate} • {version.filePath || 'Chưa có file'} • {formatFileSize(version.fileSize || 0)}</p>
                           </div>
                           <button onClick={() => handleDeleteMarketVersion(version.id)} className="px-2 py-1 text-[10px] font-semibold text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded transition-colors">Xóa</button>
                         </div>
@@ -1180,6 +1273,91 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
                         </div>
                       </div>
                     ))}
+                  </div>
+                </div>
+
+                <div className="mt-8 border-t border-zinc-800 pt-6">
+                  <div className="mb-4 flex items-center gap-2">
+                    <Database size={14} className="text-brand-400" />
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider">Commerce & Licensing</h4>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                    {[
+                      { label: 'Giao dịch', value: commercePurchases.length, color: 'text-brand-400' },
+                      { label: 'License active', value: activeCommerceLicenses, color: 'text-emerald-400' },
+                      { label: 'Nhật ký tải', value: commerceDownloads.length, color: 'text-blue-400' },
+                      { label: 'Doanh thu', value: mockRevenue, color: 'text-rose-400' },
+                    ].map((stat) => (
+                      <div key={stat.label} className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+                        <p className="text-[10px] uppercase tracking-wider text-zinc-500">{stat.label}</p>
+                        <p className={`mt-1 text-lg font-extrabold font-mono ${stat.color}`}>{stat.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    <div>
+                      <h5 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-zinc-400">Giao dịch gần đây</h5>
+                      <div className="space-y-2">
+                        {commercePurchases.slice(0, 8).map((purchase) => (
+                          <div key={purchase.id} className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-xs font-bold text-white">{purchase.itemName}</p>
+                                <p className="mt-0.5 text-[10px] text-zinc-500">
+                                  {purchase.buyerDisplayName || purchase.buyerUsername || purchase.buyerEmail} • {purchase.purchaseDate} • {purchase.itemPrice}
+                                </p>
+                                <p className="mt-1 text-[10px] text-zinc-500">
+                                  License: <span className="text-zinc-300">{maskLicenseKey(purchase.licenseLast4)}</span> • {purchase.licenseStatus}
+                                </p>
+                              </div>
+                              <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                                purchase.status === 'refunded'
+                                  ? 'border-red-500/20 bg-red-500/10 text-red-400'
+                                  : purchase.status === 'revoked'
+                                    ? 'border-orange-500/20 bg-orange-500/10 text-orange-400'
+                                    : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400'
+                              }`}>
+                                {purchase.status}
+                              </span>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button onClick={() => handleRefundPurchase(purchase.id)} className="rounded bg-red-500/10 px-2 py-1 text-[10px] font-bold text-red-400 hover:bg-red-500/20">
+                                Refund
+                              </button>
+                              <button onClick={() => handleRevokeLicense(purchase.id)} className="rounded bg-orange-500/10 px-2 py-1 text-[10px] font-bold text-orange-400 hover:bg-orange-500/20">
+                                Revoke license
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h5 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-zinc-400">Lượt tải gần đây</h5>
+                      <div className="space-y-2">
+                        {commerceDownloads.slice(0, 8).map((download) => (
+                          <div key={download.id} className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-xs font-bold text-white">{download.itemName}</p>
+                                <p className="mt-0.5 text-[10px] text-zinc-500">
+                                  {download.buyerDisplayName || download.buyerUsername || download.buyerEmail} • {download.createdAt}
+                                </p>
+                                <p className="mt-1 text-[10px] text-zinc-500">
+                                  {download.versionString || 'unknown'} • {formatFileSize(download.fileSize)}
+                                </p>
+                              </div>
+                              <span className="shrink-0 rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-400">
+                                {download.status}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </motion.div>
@@ -1310,6 +1488,40 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
           </AnimatePresence>
         </main>
       </div>
+
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            key={toast.id}
+            initial={{ opacity: 0, y: -8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            transition={{ duration: 0.18 }}
+            className={`fixed right-4 top-4 z-[10000] flex w-[min(92vw,360px)] items-start gap-3 rounded-xl border px-4 py-3 shadow-2xl backdrop-blur-md ${
+              toast.type === 'success'
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-50'
+                : 'border-red-500/30 bg-red-500/10 text-red-50'
+            }`}
+          >
+            <div className={`mt-0.5 rounded-full p-1.5 ${toast.type === 'success' ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
+              {toast.type === 'success' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold uppercase tracking-wide opacity-80">
+                {toast.type === 'success' ? 'Thành công' : 'Lỗi'}
+              </p>
+              <p className="mt-1 text-sm leading-5">{toast.message}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToast(null)}
+              className="rounded-md p-1 text-current/70 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <X size={16} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AdminAppModal
         isOpen={isAppModalOpen}

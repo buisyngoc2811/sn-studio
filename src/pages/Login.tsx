@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { ShimmerButton } from '../components/ShimmerButton';
 import { supabase } from '../lib/supabase';
+import { fetchProfileById } from '../lib/profiles';
 
 interface LoginProps {
   onLoginSuccess: (username: string) => void;
   setRoute: (route: string) => void;
+  authNotice?: string | null;
 }
 
-export const Login: React.FC<LoginProps> = ({ onLoginSuccess, setRoute }) => {
+export const Login: React.FC<LoginProps> = ({ onLoginSuccess, setRoute, authNotice }) => {
   const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -23,6 +25,13 @@ const strengthColors = ['bg-zinc-800', 'bg-red-500', 'bg-amber-500', 'bg-emerald
 const strengthText = ['', 'Yếu', 'Trung bình', 'Mạnh'];
 const ADMIN_USERNAME = 'admin';
 const ADMIN_EMAIL = 'admin@gmail.com';
+
+  React.useEffect(() => {
+    if (authNotice) {
+      setErrorMsg(authNotice);
+      setIsRegister(false);
+    }
+  }, [authNotice]);
 
 const normalizeLoginEmail = (value: string) => {
   const identifier = value.trim();
@@ -88,6 +97,13 @@ const normalizeLoginEmail = (value: string) => {
       if (error) {
         setErrorMsg('Tài khoản hoặc mật khẩu không chính xác!');
       } else if (data.session) {
+        const profile = await fetchProfileById(data.session.user.id);
+        if (profile?.status === 'banned') {
+          await supabase.auth.signOut();
+          setErrorMsg('Tài khoản của bạn đã bị đình chỉ.');
+          return;
+        }
+
         onLoginSuccess(data.session.user?.email || 'User');
         setRoute('dashboard');
       }

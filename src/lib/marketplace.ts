@@ -21,6 +21,7 @@ export interface MarketplaceVersion {
   releaseDate: string;
   changelog: string;
   filePath: string;
+  fileSize?: number;
 }
 
 export interface MarketplaceItem {
@@ -85,7 +86,7 @@ type MarketplaceRow = {
   downloads_count: number | null;
   created_at: string;
   marketplace_categories: { name: string | null; slug: string | null; label: string | null } | null;
-  marketplace_versions: { id: string; version_string: string; release_date: string; changelog: string | null; file_path: string | null }[] | null;
+  marketplace_versions: { id: string; version_string: string; release_date: string; changelog: string | null; file_path: string | null; file_size: number | null }[] | null;
   marketplace_reviews: { id: string; user_id: string | null; author_name: string | null; rating: number | string; comment: string | null; created_at: string }[] | null;
 };
 
@@ -165,6 +166,7 @@ const mapRow = (row: MarketplaceRow): MarketplaceItem => {
       releaseDate: new Date(version.release_date).toLocaleDateString('vi-VN'),
       changelog: version.changelog || '',
       filePath: version.file_path || '',
+      fileSize: version.file_size || 0,
     }));
   const reviews = (row.marketplace_reviews || []).map(review => ({
     id: review.id,
@@ -222,7 +224,7 @@ const selectQuery = `
   downloads_count,
   created_at,
   marketplace_categories!inner(name, slug, label),
-  marketplace_versions(id, version_string, release_date, changelog, file_path),
+  marketplace_versions(id, version_string, release_date, changelog, file_path, file_size),
   marketplace_reviews(id, user_id, author_name, rating, comment, created_at)
 `;
 
@@ -330,6 +332,7 @@ export const saveMarketplaceItem = async (item: MarketplaceItem): Promise<Market
         release_date: new Date().toISOString(),
         changelog: 'Cập nhật thông tin sản phẩm marketplace.',
         file_path: item.downloadPath || null,
+        file_size: item.versions?.[0]?.fileSize || 0,
       },
       { onConflict: 'item_id,version_string' }
     );
@@ -390,6 +393,7 @@ export const saveMarketplaceVersion = async (itemId: string, version: Marketplac
         release_date: version.releaseDate ? new Date(version.releaseDate).toISOString() : new Date().toISOString(),
         changelog: version.changelog || '',
         file_path: version.filePath || null,
+        file_size: version.fileSize || 0,
       },
       { onConflict: 'item_id,version_string' }
     );

@@ -18,6 +18,8 @@ import {
 import { articlesData, recentNotifications } from '../data/mockData';
 import { supabase } from '../lib/supabase';
 import { fetchApps, AppData } from '../lib/apps';
+import { fetchProfileById } from '../lib/profiles';
+import { fetchMarketplacePurchases, MarketplacePurchaseRecord, maskLicenseKey } from '../lib/commerce';
 
 interface DashboardProps {
   username: string;
@@ -38,6 +40,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ username, setRoute }) => {
   const [apps, setApps] = useState<AppData[]>([]);
   const [articles, setArticles] = useState<any[]>(articlesData);
   const [profile, setProfile] = useState<any>(null);
+  const [purchases, setPurchases] = useState<MarketplacePurchaseRecord[]>([]);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -47,18 +50,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ username, setRoute }) => {
         return;
       }
       
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .single();
-        
-        if (data) {
-          setProfile(data);
-          setProfileName(data.display_name || data.username);
-          setProfileEmail(data.email);
-          setAvatarUrl(data.avatar_url || '');
-        }
+      const data = await fetchProfileById(session.user.id);
+      if (!data) {
+        setRoute('login');
+        return;
+      }
+
+      if (data.status === 'banned') {
+        await supabase.auth.signOut();
+        setRoute('login');
+        return;
+      }
+
+      setProfile(data);
+      setProfileName(data.display_name || data.username);
+      setProfileEmail(data.email);
+      setAvatarUrl(data.avatar_url || '');
     };
     
     fetchProfile();
@@ -74,22 +81,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ username, setRoute }) => {
         setApps([]);
       }
     };
+    const loadPurchases = async () => {
+      try {
+        setPurchases(await fetchMarketplacePurchases());
+      } catch (error) {
+        console.error('Error loading dashboard purchases:', error);
+        setPurchases([]);
+      }
+    };
 
     loadArticles();
     loadApps();
+    loadPurchases();
     window.addEventListener('apps-db-updated', loadApps);
     window.addEventListener('articles-db-updated', loadArticles);
+    window.addEventListener('commerce-db-updated', loadPurchases);
     return () => {
       window.removeEventListener('apps-db-updated', loadApps);
       window.removeEventListener('articles-db-updated', loadArticles);
+      window.removeEventListener('commerce-db-updated', loadPurchases);
     };
   }, []);
 
   // Local Storage Data
   const downloadedIds = JSON.parse(localStorage.getItem('sn_downloaded_apps') || '[]');
   const savedArtIds = JSON.parse(localStorage.getItem('sn_saved_articles') || '[]');
-  const purchasedItems = JSON.parse(localStorage.getItem('sn_purchases') || '[]');
-  
   const downloadedApps = downloadedIds.length > 0 
     ? apps.filter(app => downloadedIds.includes(app.id)) 
     : [];
@@ -109,7 +125,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ username, setRoute }) => {
       return;
     }
     
-    const { error } = await supabase
+      const { error } = await supabase
       .from('profiles')
       .upsert({
         id: session.user.id,
@@ -424,7 +440,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ username, setRoute }) => {
                   <p className="text-zinc-500 text-xs mt-1">Danh sách sản phẩm bạn đã mua từ Marketplace và License Key tương ứng.</p>
                 </div>
 
-                {purchasedItems.length === 0 ? (
+                {purchases.length === 0 ? (
                   <div className="text-center py-12 border border-dashed border-zinc-800 rounded-xl">
                     <ShoppingCart size={24} className="text-zinc-600 mx-auto mb-3" />
                     <p className="text-zinc-400 text-sm font-medium">Bạn chưa mua sản phẩm nào</p>
@@ -432,29 +448,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ username, setRoute }) => {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {purchasedItems.map((item: any, idx: number) => (
-                      <div key={idx} className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 hover:border-brand-500/30 transition-colors">
+                    {purchases.map((item, idx: number) => (
+                      <div key={item.id} className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 hover:border-brand-500/30 transition-colors">
                         <div className="flex flex-col md:flex-row justify-between gap-4">
                           <div>
                             <div className="flex items-center gap-2 mb-1">
-                              <h4 className="text-sm font-bold text-white leading-snug">{item.name}</h4>
+                              <h4 className="text-sm font-bold text-white leading-snug">{item.itemName}</h4>
                               {item.badge && (
                                 <span className="text-[9px] font-bold text-brand-400 uppercase tracking-wider bg-brand-500/10 px-1.5 py-0.5 rounded border border-brand-500/20">{item.badge}</span>
                               )}
                             </div>
-                            <p className="text-xs text-zinc-400">{item.seller} • Mua ngày {item.purchaseDate}</p>
+                            <p className="text-xs text-zinc-400">{item.seller} • Mua ngày {item.purchaseDate} • {item.status}</p>
                           </div>
                           
                           <div className="flex-shrink-0 bg-black/40 border border-white/[0.06] rounded-lg p-3 w-full md:w-auto">
                             <p className="text-[10px] text-zinc-500 uppercase font-semibold mb-1 flex items-center gap-1"><Key size={12}/> License Key</p>
                             <div className="flex items-center gap-2">
                               <code className="text-xs text-emerald-400 font-mono select-all bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
-                                {item.licenseKey}
+                                {maskLicenseKey(item.licenseLast4)}
                               </code>
-                              <button onClick={() => alert('Đã sao chép License Key!')} className="text-zinc-500 hover:text-white transition-colors">
+                              <button onClick={() => alert('License chỉ hiển thị một lần sau khi thanh toán.')} className="text-zinc-500 hover:text-white transition-colors">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                               </button>
                             </div>
+                            <p className="mt-2 text-[10px] text-zinc-500">Trạng thái license: {item.licenseStatus}</p>
                           </div>
                         </div>
                       </div>

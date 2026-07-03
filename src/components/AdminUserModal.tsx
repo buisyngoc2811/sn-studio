@@ -8,11 +8,12 @@ interface AdminUserModalProps {
   isOpen: boolean;
   onClose: () => void;
   user: ProfileRow | null;
-  onSave: (user: ProfileRow) => void;
+  onSave: (user: ProfileRow) => Promise<void>;
 }
 
 export const AdminUserModal: React.FC<AdminUserModalProps> = ({ isOpen, onClose, user, onSave }) => {
   const [formData, setFormData] = useState<Partial<ProfileRow>>({});
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -24,16 +25,21 @@ export const AdminUserModal: React.FC<AdminUserModalProps> = ({ isOpen, onClose,
         display_name: '',
         email: '',
         role: 'user',
-        status: 'Active',
+        status: 'active',
         avatar_url: '',
       });
     }
   }, [user, isOpen]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(formData as ProfileRow);
-    onClose();
+    setIsSaving(true);
+    try {
+      await onSave(formData as ProfileRow);
+      onClose();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const modalContent = (
@@ -127,17 +133,17 @@ export const AdminUserModal: React.FC<AdminUserModalProps> = ({ isOpen, onClose,
                 <div>
                   <label className="block text-xs font-bold text-zinc-400 mb-1">Trạng thái (Status)</label>
                   <select
-                    value={formData.status || 'Active'}
+                    value={formData.status || 'active'}
                     onChange={e => setFormData({...formData, status: e.target.value as ProfileRow['status']})}
-                    className={`w-full rounded bg-zinc-900 border px-3 py-2 text-sm focus:outline-none focus:border-brand-accent ${formData.status === 'Banned' ? 'border-red-500/50 text-red-400' : 'border-zinc-800 text-emerald-400'}`}
+                    className={`w-full rounded bg-zinc-900 border px-3 py-2 text-sm focus:outline-none focus:border-brand-accent ${formData.status === 'banned' ? 'border-red-500/50 text-red-400' : 'border-zinc-800 text-emerald-400'}`}
                   >
-                    <option value="Active">Hoạt động</option>
-                    <option value="Banned">Bị cấm (Banned)</option>
+                    <option value="active">Hoạt động</option>
+                    <option value="banned">Bị cấm (Banned)</option>
                   </select>
                 </div>
               </div>
 
-              {formData.status === 'Banned' && (
+              {formData.status === 'banned' && (
                 <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 flex items-start gap-2">
                   <ShieldAlert size={16} className="text-red-400 mt-0.5 shrink-0" />
                   <p className="text-[11px] text-red-300">Tài khoản này hiện đang bị đình chỉ trong hồ sơ Supabase.</p>
@@ -148,16 +154,18 @@ export const AdminUserModal: React.FC<AdminUserModalProps> = ({ isOpen, onClose,
                 <button
                   type="button"
                   onClick={onClose}
+                  disabled={isSaving}
                   className="px-4 py-2 rounded-lg text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/[0.05] transition-colors"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
+                  disabled={isSaving}
                   className="px-6 py-2 rounded-lg text-sm font-bold text-white bg-brand-accent hover:bg-brand-600 shadow-glow-red transition-colors flex items-center gap-2"
                 >
                   <Save size={16} />
-                  Lưu thay đổi
+                  {isSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
                 </button>
               </div>
             </form>

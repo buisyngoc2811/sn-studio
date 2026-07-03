@@ -17,6 +17,7 @@ import { Search, X } from 'lucide-react';
 import { articlesData } from './data/mockData';
 import { supabase } from './lib/supabase';
 import { fetchApps, AppData } from './lib/apps';
+import { fetchProfileById } from './lib/profiles';
 
 interface Particle {
   id: number;
@@ -43,6 +44,7 @@ export const App: React.FC = () => {
   const [username, setUsername] = useState<string>('');
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState<string>('');
   const [searchApps, setSearchApps] = useState<AppData[]>([]);
@@ -50,15 +52,50 @@ export const App: React.FC = () => {
   const spotlightRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let isMounted = true;
+
+    const applySession = async (session: any) => {
+      if (!isMounted) return;
+
+      if (!session) {
+        setIsLoggedIn(false);
+        setUsername('');
+        setIsAuthLoading(false);
+        return;
+      }
+
+      try {
+        const profile = await fetchProfileById(session.user.id);
+        if (!isMounted) return;
+
+        if (profile?.status === 'banned') {
+          setAuthNotice('Tài khoản của bạn đã bị đình chỉ.');
+          setIsLoggedIn(false);
+          setUsername('');
+          setIsAuthLoading(false);
+          await supabase.auth.signOut();
+          if (isMounted) setRoute('login');
+          return;
+        }
+
+        setAuthNotice(null);
+        setIsLoggedIn(true);
+        setUsername(profile?.email || session.user.email || '');
+      } catch (error) {
+        console.error('Error loading auth profile:', error);
+        setIsLoggedIn(!!session);
+        setUsername(session?.user?.email || '');
+      } finally {
+        if (isMounted) setIsAuthLoading(false);
+      }
+    };
+
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsLoggedIn(!!session);
-      setUsername(session?.user?.email || '');
-      setIsAuthLoading(false);
+      void applySession(session);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsLoggedIn(!!session);
-      setUsername(session?.user?.email || '');
+      void applySession(session);
     });
 
     return () => subscription.unsubscribe();
@@ -127,6 +164,7 @@ export const App: React.FC = () => {
   }, [isSearchOpen]);
 
   const handleLogout = async () => {
+    setAuthNotice(null);
     await supabase.auth.signOut();
     setRoute('login');
   };
@@ -177,7 +215,7 @@ export const App: React.FC = () => {
       case 'docs':
         return <Docs />;
       case 'login':
-        return <Login onLoginSuccess={handleLoginSuccess} setRoute={setRoute} />;
+        return <Login onLoginSuccess={handleLoginSuccess} setRoute={setRoute} authNotice={authNotice} />;
       case 'admin':
         if (isLoggedIn && (username === 'admin@gmail.com' || username === 'admin@snstudio.vn')) {
           return <Admin username={username} setRoute={setRoute} />;

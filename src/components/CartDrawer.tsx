@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ShoppingCart, Trash2, CheckCircle } from 'lucide-react';
+import { X, ShoppingCart, Trash2, CheckCircle, Copy, Key } from 'lucide-react';
 import { MarketplaceItem, fetchMarketplaceItemsByIds } from '../lib/marketplace';
 import { supabase } from '../lib/supabase';
+import { MarketplacePurchaseActionResult, purchaseMarketplaceItem } from '../lib/commerce';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -14,6 +15,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
   const [cartItems, setCartItems] = useState<MarketplaceItem[]>([]);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
+  const [purchaseResults, setPurchaseResults] = useState<MarketplacePurchaseActionResult[]>([]);
 
   const loadCart = async () => {
     const rawItems = JSON.parse(localStorage.getItem('sn_cart') || '[]');
@@ -35,6 +37,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
     if (isOpen) {
       loadCart();
       setCheckoutSuccess(false);
+      setPurchaseResults([]);
     }
   }, [isOpen]);
 
@@ -63,16 +66,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
     return new Intl.NumberFormat('vi-VN').format(num) + 'đ';
   };
 
-  const generateLicenseKey = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let key = '';
-    for (let i = 0; i < 16; i++) {
-      if (i > 0 && i % 4 === 0) key += '-';
-      key += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return key;
-  };
-
   const handleCheckout = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
@@ -82,31 +75,17 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
 
     setIsCheckingOut(true);
     try {
-      const purchaseRows = cartItems.map(item => ({
-        user_id: session.user.id,
-        item_id: item.id,
-        license_key: generateLicenseKey(),
-      }));
-
-      const { error } = await supabase
-        .from('marketplace_purchases')
-        .upsert(purchaseRows, { onConflict: 'user_id,item_id' });
-
-      if (error) throw error;
-
-      const existingPurchases = JSON.parse(localStorage.getItem('sn_purchases') || '[]');
-      const existingIds = new Set(existingPurchases.map((purchase: any) => purchase.id));
-      const localPurchases = cartItems.filter(item => !existingIds.has(item.id)).map(item => ({
-        ...item,
-        purchaseDate: new Date().toLocaleDateString('vi-VN'),
-        licenseKey: purchaseRows.find(row => row.item_id === item.id)?.license_key || generateLicenseKey(),
-      }));
-      localStorage.setItem('sn_purchases', JSON.stringify([...existingPurchases, ...localPurchases]));
+      const results: MarketplacePurchaseActionResult[] = [];
+      for (const item of cartItems) {
+        results.push(await purchaseMarketplaceItem(item.id));
+      }
+      setPurchaseResults(results);
       localStorage.setItem('sn_cart', JSON.stringify([]));
       
       setCartItems([]);
       setCheckoutSuccess(true);
       window.dispatchEvent(new Event('cart-updated'));
+      window.dispatchEvent(new Event('commerce-db-updated'));
     } catch (error: any) {
       alert(`Không thể thanh toán: ${error.message}`);
     } finally {
@@ -160,8 +139,46 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
                   </div>
                   <h3 className="text-2xl font-bold text-white">Thanh toán thành công!</h3>
                   <p className="text-zinc-400 max-w-[250px]">
-                    Sản phẩm và License Key đã được lưu vào Dashboard của bạn.
+                    Sản phẩm và license đã được ghi nhận. License Key chỉ hiển thị một lần tại đây.
                   </p>
+                  <div className="w-full max-w-lg space-y-3 pt-2 text-left">
+                    {purchaseResults.map((purchase) => (
+                      <div key={purchase.purchaseId} className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-bold text-white">{purchase.itemName}</p>
+                            <p className="text-[11px] text-zinc-500">
+                              {purchase.purchaseStatus === 'claimed' ? 'Miễn phí' : 'Đã mua'} • {purchase.licenseStatus}
+                            </p>
+                          </div>
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+                            {purchase.purchaseStatus}
+                          </span>
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="text-[10px] uppercase tracking-wider text-emerald-300 flex items-center gap-1">
+                              <Key size={11} />
+                              License Key
+                            </p>
+                            <code className="mt-1 block break-all font-mono text-xs text-emerald-50">
+                              {purchase.licenseKey || `••••-••••-••••-${purchase.licenseLast4 || '----'}`}
+                            </code>
+                          </div>
+                          {purchase.licenseKey && (
+                            <button
+                              type="button"
+                              onClick={() => navigator.clipboard.writeText(purchase.licenseKey || '')}
+                              className="shrink-0 rounded-md border border-emerald-500/20 bg-emerald-500/15 p-2 text-emerald-100 hover:bg-emerald-500/25"
+                              title="Copy"
+                            >
+                              <Copy size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                   <button
                     onClick={onClose}
                     className="mt-4 px-6 py-2.5 bg-brand-accent text-white font-bold rounded-xl hover:bg-brand-600 transition-colors"
