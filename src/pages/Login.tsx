@@ -19,12 +19,20 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, setRoute }) => {
   const [showToast, setShowToast] = useState(false);
 
   const strength = password.length === 0 ? 0 : password.length < 6 ? 1 : password.length < 10 && !/[A-Z]/.test(password) ? 2 : 3;
-  const strengthColors = ['bg-zinc-800', 'bg-red-500', 'bg-amber-500', 'bg-emerald-500'];
-  const strengthText = ['', 'Yếu', 'Trung bình', 'Mạnh'];
+const strengthColors = ['bg-zinc-800', 'bg-red-500', 'bg-amber-500', 'bg-emerald-500'];
+const strengthText = ['', 'Yếu', 'Trung bình', 'Mạnh'];
+const ADMIN_USERNAME = 'admin';
+const ADMIN_EMAIL = 'admin@gmail.com';
+
+const normalizeLoginEmail = (value: string) => {
+  const identifier = value.trim();
+  return identifier.toLowerCase() === ADMIN_USERNAME ? ADMIN_EMAIL : identifier;
+};
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+    const loginEmail = normalizeLoginEmail(username);
 
     if (!username.trim() || !password.trim()) {
       if (isRegister) alert('Vui lòng điền đầy đủ tài khoản và mật khẩu!');
@@ -44,7 +52,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, setRoute }) => {
 
     if (isRegister) {
       const { data, error } = await supabase.auth.signUp({
-        email: username,
+        email: loginEmail,
         password: password,
       });
 
@@ -58,10 +66,10 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, setRoute }) => {
       if (data.user) {
         await supabase.from('profiles').insert({
           id: data.user.id,
-          username: username.split('@')[0],
-          display_name: username.split('@')[0],
-          email: username,
-          role: 'user',
+          username: loginEmail === ADMIN_EMAIL ? ADMIN_USERNAME : loginEmail.split('@')[0],
+          display_name: loginEmail === ADMIN_EMAIL ? ADMIN_USERNAME : loginEmail.split('@')[0],
+          email: loginEmail,
+          role: loginEmail === ADMIN_EMAIL ? 'admin' : 'user',
           avatar_url: ''
         });
       }
@@ -71,7 +79,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, setRoute }) => {
       
     } else {
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: username,
+        email: loginEmail,
         password: password,
       });
       

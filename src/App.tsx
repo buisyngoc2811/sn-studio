@@ -108,7 +108,7 @@ export const App: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     
     // Auto-redirect admin from dashboard to admin panel
-    if (currentRoute === 'dashboard' && username === 'admin@snstudio.vn') {
+    if (currentRoute === 'dashboard' && (username === 'admin@gmail.com' || username === 'admin@snstudio.vn')) {
       setRoute('admin');
     }
   }, [currentRoute, username]);
@@ -179,7 +179,7 @@ export const App: React.FC = () => {
       case 'login':
         return <Login onLoginSuccess={handleLoginSuccess} setRoute={setRoute} />;
       case 'admin':
-        if (isLoggedIn && username === 'admin@snstudio.vn') {
+        if (isLoggedIn && (username === 'admin@gmail.com' || username === 'admin@snstudio.vn')) {
           return <Admin username={username} setRoute={setRoute} />;
         } else {
           return (

@@ -152,7 +152,7 @@ export const Admin: React.FC<AdminProps> = ({ username, setRoute }) => {
   }, []);
 
   const handleDeleteUser = (userKey: string) => {
-    if (userKey === 'admin@snstudio.vn') {
+    if (userKey === 'admin@gmail.com' || userKey === 'admin@snstudio.vn') {
       alert('Không thể xóa tài khoản Quản trị viên tối cao!');
       return;
     }
